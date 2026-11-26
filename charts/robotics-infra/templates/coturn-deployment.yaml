@@ -35,11 +35,36 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # 嚴格排除 H200 / H100 / A100 / B300 訓練卡節點
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.product
+                    operator: NotIn
+                    values:
+                      - NVIDIA-A100-SXM4-40GB
+                      - NVIDIA-A100-SXM4-80GB
+                      - NVIDIA-A100-PCIE-40GB
+                      - NVIDIA-A100-80GB-PCIe
+                      - NVIDIA-H100-80GB-HBM3
+                      - NVIDIA-H100-PCIe
+                      - NVIDIA-H100-NVL
+                      - NVIDIA-H200
+                      - NVIDIA-H200-SXM5-141GB
+                      - NVIDIA-H200-NVL
+                      - NVIDIA-B200
+                      - NVIDIA-B300
+                      - NVIDIA-GB200
+                      - NVIDIA-GB300
       containers:
         - name: coturn
           image: "{{ .Values.coturn.image.repository }}:{{ .Values.coturn.image.tag }}"
           imagePullPolicy: {{ .Values.coturn.image.pullPolicy }}
           env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
             - name: TURN_SHARED_SECRET
               valueFrom:
                 secretKeyRef:

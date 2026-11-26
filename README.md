@@ -17,7 +17,7 @@
    - 每位使用者的 Ingress 同步掛載 `/zenoh`（`wss://<user>.selkies.local/zenoh` → `Pod:7448` `websocat` → `127.0.0.1:7447` `zenoh-bridge-ros2dds v1.10.2`），零額外 IP、零 NodePort。
    - 提供 **`ros-bridge` CLI**：支援 **Peer-to-Peer 跨 Pod**（`ros-bridge serve` + `ros-bridge connect wss://alice.selkies.local/zenoh`，跨不同 `ROS_DOMAIN_ID` 亦可直接橋接 CycloneDDS）與 **Hub-and-Spoke 星狀模式**（`charts/robotics-infra` 選配 `rosZenohHub.enabled=true` + `k8s/components/cross-pod-ros` 自動注入端點，使用者執行 `ros-bridge hub` 完全不需知道 K8s Service）。
 3. **零宿主機影響、零全叢集設定異動、嚴格鎖定僅涉及 RTX PRO 6000（不碰觸 H200 / H100 / A100 / B300）**：
-   - **三重硬體排程鎖定**：`nodeSelector`（`robot-infra/gpu-pool: rtx-pro-6000` + `gpu.capability/rtx-gfx: "true"`）+ `nodeAffinity`（明確 `NotIn` 排除所有 `A100` / `H100` / `H200` / `B200` / `B300` / `GB200` / `GB300`）+ `+gfx` MIG 資源申請；共用 `zenoh-hub` 亦以 `nvidia.com/gpu.present DoesNotExist` 鎖定純 CPU 節點。
+   - **三重硬體排程鎖定**：`nodeSelector`（`robot-infra/gpu-pool: rtx-pro-6000` + `gpu.capability/rtx-gfx: "true"`）+ `nodeAffinity`（明確 `NotIn` 排除所有 `A100` / `H100` / `H200` / `B200` / `B300` / `GB200` / `GB300`）+ `+gfx` MIG 資源申請；無純 CPU 節點時，`zenoh-hub` 與選配 `coturn` 亦預設集中排程於 **RTX PRO 6000 節點**（設 `NVIDIA_VISIBLE_DEVICES=void` 佔 **0 GPU**，日後有 CPU 節點可設 `placement: "cpu-only"`）。
    - **非破壞式 MIG 合併腳本**：[deploy/gpu-operator/apply-pro6000-mig-safe.sh](./deploy/gpu-operator/apply-pro6000-mig-safe.sh) 執行前強制檢查目標節點 GPU 型號（命中 H200/H100/A100/B300 立即中止），並以合併模式保留叢集既有 `default-mig-parted-config` 所有 Profile。
    - **純 Namespace 級別資源**：`charts/robotics-infra` 與 `k8s/users/` 僅於 `robotics` Namespace 內運作，零 `ClusterRole`、零 `CRD`、零 `Webhook`、零 Ingress-NGINX 全域設定修改。
 
@@ -494,6 +494,18 @@ kubectl -n robotics get configmap,networkpolicy,limitrange
    - 若有 OPA Gatekeeper 禁止 `hostPath`，於使用者啟用 `components/smarter-device-tun`，並將 `kube-system` 的 `smarter-device-manager` DaemonSet 加上 `nodeSelector: { robot-infra/gpu-pool: rtx-pro-6000 }`（絕不部署到 H200/H100/A100/B300）。
 7. **確認 NetworkPolicy CNI 支援與跨 Pod Ingress 驗證**：
    - `charts/robotics-infra/values.yaml` 預設 `networkPolicy.allowEgressToIngress: true`（解決 Calico/Cilium DNAT 後阻斷 `ros-bridge connect wss://...` 之盲區），且 `rosZenohHub.ingress.enabled` 預設為 `false`（開啟對外 Ingress 時請務必設定 `authSecretName` 搭配 `ros-bridge connect ... -u user:pass` 或設定 `whitelistSourceRange`）。
+8. **無純 CPU 節點（全數集中至 RTX PRO 6000 節點）之網路開銷與單節點負荷規劃**：
+   - **全叢集網路開銷（極低・不干擾訓練網段）**：
+     - CycloneDDS 鎖定 `lo`，**對 K8s CNI 產生的 DDS multicast = 0 pps**。
+     - 預設 `webrtc-udp-mux` 視訊流（約 `8–15 Mbps`/人）從 PRO 6000 節點直達客戶端，**不繞經 Ingress-NGINX 與跨節點 CNI Overlay**；單張 PRO 6000（3–4 人）總對外頻寬約 `36–60 Mbps`（佔 10GbE `< 0.6%`）。
+     - 因 `zenoh-hub` 集中於同台 PRO 6000 節點，跨 Pod `ros-bridge hub`（TCP `7447`）流量 **100% 留在單節點內部虛擬網橋（< 0.2 ms、零實體網卡流量）**。
+   - **單張 RTX PRO 6000 Blackwell (96GB) 節點建議最低規格（支援 3～4 人 + `zenoh-hub`）**：
+     - **CPU**：至少 **32 vCPU**（重度 Isaac Sim / 4 人建議 **48–64 vCPU**；避免多人同時 `colcon build` 搶核造成串流掉幀，建議編譯加 `--parallel-workers 4`）
+     - **記憶體（RAM + `/dev/shm`）**：至少 **128 GiB RAM**（2 人以上跑 Isaac Sim 建議 **192–256 GiB**；注意 `emptyDir Memory` `/dev/shm` 實際寫入量會計入容器 memory limit）
+     - **NVENC 編碼器**：專業卡無消費級 Session 限制，3～4 條 1080p/2K@60fps 僅佔 `< 15%` 編碼負荷
+     - **儲存（NVMe SSD）**：每卡 3～4 人約需 `0.8–1.4 TB` 實體 `ext4/xfs` NVMe 空間，供個人 PVC 與 Podman 原生 `overlay` 使用（避免多人在 HDD 同時 `podman pull` 或編譯 Shader 造成 I/O wait）
+     - **系統 `podPidsLimit`**：確認 kubelet `podPidsLimit` 不受限或 `>= 4096`（防 `colcon build` + 內層 Podman 撞 PID 上限）
+     - **GPU Taint 注意**：若 PRO 6000 節點掛有 `nvidia.com/gpu=present:NoSchedule` Taint，請在 `k8s/base/deployment.yaml` 與 `rosZenohHub.tolerations` 補上對應 toleration。
 
 ### 7.4 新增／更新使用者操作指令
 ```bash

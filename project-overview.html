@@ -517,7 +517,7 @@ unzip robot-infra-v3-bundle.zip -d robot-infra-v3</code></pre>
           <thead><tr><th>隔離面向</th><th>v3 實作機制</th><th>保證結果</th></tr></thead>
           <tbody>
             <tr><td><strong>跨 Pod ROS 2（免查 K8s svc）</strong></td><td>Pod 內預設 <code>rmw_cyclonedds_cpp</code> 綁定 <code>lo</code> 直通 <code>mig-podman</code>/Docker；跨 Pod 經單一 Ingress <code>wss://&lt;user&gt;.selkies.local/zenoh</code>（<code>:7448→7447</code>）或純 CPU <code>zenoh-hub</code> + <code>ros-bridge</code> CLI</td><td>零額外 IP、零 DDS multicast 外洩、使用者完全不需 <code>kubectl get svc</code></td></tr>
-            <tr><td><strong>嚴格僅排程 RTX PRO 6000</strong></td><td>三重硬體鎖定：<code>nodeSelector</code>（<code>robot-infra/gpu-pool: rtx-pro-6000</code> + <code>gpu.capability/rtx-gfx: "true"</code>）+ <code>nodeAffinity</code> <code>NotIn</code> 排除全部 <code>A100/H100/H200/B200/B300/GB200/GB300</code> + <code>+gfx</code> MIG 資源；<code>zenoh-hub</code> 鎖定 <code>nvidia.com/gpu.present DoesNotExist</code></td><td><strong>絕對不會排程或影響 H200 / H100 / A100 / B300 訓練節點</strong></td></tr>
+            <tr><td><strong>嚴格僅排程 RTX PRO 6000</strong></td><td>三重硬體鎖定：<code>nodeSelector</code>（<code>robot-infra/gpu-pool: rtx-pro-6000</code> + <code>gpu.capability/rtx-gfx: "true"</code>）+ <code>nodeAffinity</code> <code>NotIn</code> 排除全部 <code>A100/H100/H200/B200/B300/GB200/GB300</code> + <code>+gfx</code> MIG 資源；無 CPU 節點時 <code>zenoh-hub</code> 與 <code>coturn</code> 亦集中至 PRO 6000 節點並設 <code>NVIDIA_VISIBLE_DEVICES=void</code>（佔 0 GPU）</td><td><strong>無 CPU 節點亦可直接部署，且絕對不會碰觸 H200 / H100 / A100 / B300 訓練節點</strong></td></tr>
             <tr><td><strong>非破壞式 MIG 合併</strong></td><td><code>deploy/gpu-operator/apply-pro6000-mig-safe.sh</code> 先驗證節點 GPU 型號（命中 H200/H100/A100/B300 立即中止），再合併叢集既有 <code>default-mig-parted-config</code></td><td>完整保留既有訓練卡的所有 MIG Profile</td></tr>
             <tr><td><strong>零 Host OS 與全叢集污染</strong></td><td>100% Namespace-scoped（<code>robotics</code>），零 <code>ClusterRole</code>/<code>CRD</code>/<code>Webhook</code>；<code>privileged: false</code>、<code>hostNetwork/PID/IPC: false</code>、6 項最小 Capabilities、客製 Seccomp</td><td>不改動宿主機核心／網路／sysctl，不更動其他 Namespace 或 Ingress Controller 全域旗標</td></tr>
           </tbody>
@@ -1104,11 +1104,12 @@ sudo cp charts/robotics-infra/files/podman-rootless-seccomp.json \
 sudo ufw allow proto udp from 10.0.0.0/8 to any port 50000:51000</code></pre>
         </div>
         <div class="callout warn">
-          <strong>Linux Server K8s 關鍵盲區檢查（已內建防呆）：</strong><br/>
-          • <strong><code>mig.strategy: single</code> vs <code>mixed</code></strong>：若既有 H200/H100/A100/B300 節點已在 <code>single</code> 策略下使用 MIG，切勿改動全叢集 <code>mig.strategy</code>；PRO 6000 改套 <code>all-2g.48gb.gfx</code> 並申請 <code>nvidia.com/gpu: 1</code>。<br/>
-          • <strong>Ubuntu 24.04 AppArmor</strong>：若 <code>sysctl kernel.apparmor_restrict_unprivileged_userns</code> 為 <code>1</code>，請啟用 <code>components/apparmor-unconfined</code>（K8s 1.28/1.29 改用 Pod Annotation）。<br/>
-          • <strong>OPA Gatekeeper 禁 <code>hostPath</code></strong>：一鍵啟用 <code>components/smarter-device-tun</code>，並將 <code>kube-system/smarter-device-manager</code> 加上 <code>nodeSelector: { robot-infra/gpu-pool: rtx-pro-6000 }</code>。<br/>
-          • <strong>Calico/Cilium NetworkPolicy DNAT</strong>：<code>robotics-infra</code> 已內建 <code>allowEgressToIngress: true</code>（放行 TCP 443/8443）確保 <code>ros-bridge connect wss://...</code> 跨 Pod 暢通；<code>rosZenohHub.ingress.enabled</code> 預設關閉，對外開啟時支援 <code>authSecretName</code> 與 IP 白名單。
+          <strong>Linux Server K8s 關鍵盲區檢查與單節點負荷（已預設無 CPU Node 集中於 PRO 6000）：</strong><br/>
+          • <strong>無 CPU 節點集中部署</strong>：<code>rosZenohHub.placement: "pro6000"</code> 與 <code>coturn</code> 均預設集中至 PRO 6000 節點並設 <code>NVIDIA_VISIBLE_DEVICES=void</code>（0 GPU 佔用，跨 Pod <code>ros-bridge hub</code> 流量 100% 走單節點內虛擬網橋 &lt;0.2ms）。<br/>
+          • <strong>網路開銷評估</strong>：CycloneDDS 鎖 <code>lo</code>（0 pps CNI 廣播）；<code>webrtc-udp-mux</code> 直出約 <code>12 Mbps</code>/人（單卡 3～4 人總計 <code>36–60 Mbps</code>，佔 10GbE &lt;0.6%，不衝擊 Ingress-NGINX 與訓練卡網段）。<br/>
+          • <strong>單張 PRO 6000 節點建議規格（3～4 人 + Hub）</strong>：<strong>CPU ≥ 32 vCPU</strong>（重度模擬建議 48–64 vCPU）、<strong>RAM ≥ 128 GiB</strong>（多 Isaac Sim 建議 192–256 GiB，含 <code>/dev/shm</code>）、<strong>NVMe SSD ≥ 1–1.5 TB</strong>、<code>podPidsLimit ≥ 4096</code>。<br/>
+          • <strong><code>mig.strategy: single</code> vs <code>mixed</code></strong>：若既有 H200/H100/A100/B300 已在 <code>single</code> 策略啟用 MIG，切勿改全叢集 <code>mig.strategy</code>；PRO 6000 改套 <code>all-2g.48gb.gfx</code> 並申請 <code>nvidia.com/gpu: 1</code>。<br/>
+          • <strong>Ubuntu 24.04 AppArmor / OPA</strong>：視需求啟用 <code>components/apparmor-unconfined</code> 與 <code>components/smarter-device-tun</code>。
         </div>
       </div>
     </section>

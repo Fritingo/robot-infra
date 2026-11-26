@@ -25,16 +25,25 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- $placement := .Values.rosZenohHub.placement | default "pro6000" -}}
+      {{- if eq $placement "pro6000" }}
+      nodeSelector:
+        robot-infra/gpu-pool: "rtx-pro-6000"
+        {{- with .Values.rosZenohHub.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- else }}
       {{- with .Values.rosZenohHub.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       {{- with .Values.rosZenohHub.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.rosZenohHub.excludeGpuNodes }}
-      # 強制排除所有 GPU 節點（絕不佔用 H200 / H100 / A100 / B300 / PRO 6000）
+      {{- if eq $placement "cpu-only" }}
+      # 強制排除所有 GPU 節點（僅於具備純 CPU 節點之叢集使用）
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -42,6 +51,34 @@ spec:
               - matchExpressions:
                   - key: nvidia.com/gpu.present
                     operator: DoesNotExist
+      {{- else }}
+      # 無純 CPU 節點模式：集中排程至 RTX PRO 6000 節點（佔用 0 GPU），嚴格排除 H200 / H100 / A100 / B300
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: robot-infra/gpu-pool
+                    operator: In
+                    values:
+                      - rtx-pro-6000
+                  - key: nvidia.com/gpu.product
+                    operator: NotIn
+                    values:
+                      - NVIDIA-A100-SXM4-40GB
+                      - NVIDIA-A100-SXM4-80GB
+                      - NVIDIA-A100-PCIE-40GB
+                      - NVIDIA-A100-80GB-PCIe
+                      - NVIDIA-H100-80GB-HBM3
+                      - NVIDIA-H100-PCIe
+                      - NVIDIA-H100-NVL
+                      - NVIDIA-H200
+                      - NVIDIA-H200-SXM5-141GB
+                      - NVIDIA-H200-NVL
+                      - NVIDIA-B200
+                      - NVIDIA-B300
+                      - NVIDIA-GB200
+                      - NVIDIA-GB300
       {{- end }}
       securityContext:
         runAsNonRoot: true
@@ -53,6 +90,10 @@ spec:
         - name: zenoh-router
           image: "{{ .Values.rosZenohHub.image.repository }}:{{ .Values.rosZenohHub.image.tag }}"
           imagePullPolicy: {{ .Values.rosZenohHub.image.pullPolicy }}
+          env:
+            # 確保在 GPU 節點上絕不暴露或佔用任何 GPU / MIG 裝置
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
           command:
             - /usr/local/bin/zenoh-bridge-ros2dds
             - --no-multicast-scouting
@@ -75,6 +116,9 @@ spec:
         - name: zenoh-ws
           image: "{{ .Values.rosZenohHub.image.repository }}:{{ .Values.rosZenohHub.image.tag }}"
           imagePullPolicy: {{ .Values.rosZenohHub.image.pullPolicy }}
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
           command:
             - /usr/local/bin/websocat
             - --binary

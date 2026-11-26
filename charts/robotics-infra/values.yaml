@@ -47,6 +47,7 @@ limitRange:
   defaultLimitMemory: "32Gi"
 
 # 4. 選配：共用 Coturn UDP 中繼（僅隔離私網無法使用 webrtc-udp-mux 時改為 enabled: true）
+#    無純 CPU 節點時預設集中於 RTX PRO 6000 節點（佔用 0 GPU，嚴格排除 H200/H100/A100/B300）
 coturn:
   enabled: false
   image:
@@ -54,8 +55,9 @@ coturn:
     tag: "4.6.2-alpine-patched"
     pullPolicy: IfNotPresent
     pullSecrets: []
+  # 預設集中至 PRO 6000 節點（若有獨立邊界 CPU 節點可覆寫為該節點 hostname）
   nodeSelector:
-    kubernetes.io/hostname: "edge-node-01"
+    robot-infra/gpu-pool: "rtx-pro-6000"
   tolerations: []
   externalIp: "192.168.10.50"
   realm: "selkies.local"
@@ -76,8 +78,9 @@ coturn:
       memory: "2Gi"
 
 # 5. 選配：跨 Pod / 跨實體機器人共用 Zenoh Hub（免使用者查詢 K8s Service）
-#    - 僅部署於純 CPU 節點（預設明確排除所有 GPU 節點，絕不佔用 H200/H100/A100/B300/PRO6000）
-#    - 內部提供 ClusterIP:7447（供 Pod 透過環境變數自動高速連線），對外複用單一 Ingress 443 (/zenoh)
+#    - 預設 placement: "pro6000"（無純 CPU 節點時集中於 RTX PRO 6000 節點，設 NVIDIA_VISIBLE_DEVICES=void 佔 0 GPU，
+#      並以 nodeAffinity 明確排除 H200/H100/A100/B300；日後若新增純 CPU 節點可改 placement: "cpu-only"）
+#    - 內部提供 ClusterIP:7447（供 Pod 透過環境變數自動高速連線，同節點內零實體網卡開銷）
 rosZenohHub:
   enabled: false
   image:
@@ -87,8 +90,8 @@ rosZenohHub:
     pullSecrets: []
   tcpPort: 7447
   wsPort: 7448
-  # 強制排除所有 GPU 節點（nvidia.com/gpu.present DoesNotExist），絕不碰觸任何訓練卡節點
-  excludeGpuNodes: true
+  # pro6000（預設：無 CPU 節點時集中於 PRO 6000 節點且佔 0 GPU） | cpu-only（排除所有 GPU 節點）
+  placement: "pro6000"
   nodeSelector: {}
   tolerations: []
   ingress:
