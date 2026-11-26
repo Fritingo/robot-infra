@@ -1,0 +1,82 @@
+{{- if and .Values.ingress.enabled .Values.user.enabled }}
+{{- $name := include "selkies-user.name" . -}}
+{{- $routingMode := .Values.ingress.routingMode | default "subdomain" -}}
+{{- $host := "" -}}
+{{- if eq $routingMode "subdomain" -}}
+  {{- $host = printf "%s.%s" .Values.user.name .Values.ingress.baseDomain -}}
+{{- else -}}
+  {{- $host = .Values.ingress.host | default "" -}}
+{{- end -}}
+{{- $sshPath := .Values.ssh.ingressPath | default "/ssh" -}}
+{{- if eq $routingMode "subfolder" -}}
+  {{- $sshPath = printf "/%s%s" .Values.user.name $sshPath -}}
+{{- end -}}
+{{- $zenohPath := "/zenoh" -}}
+{{- if and .Values.rosBridge .Values.rosBridge.ingressPath -}}
+  {{- $zenohPath = .Values.rosBridge.ingressPath -}}
+{{- end -}}
+{{- if eq $routingMode "subfolder" -}}
+  {{- $zenohPath = printf "/%s%s" .Values.user.name $zenohPath -}}
+{{- end -}}
+{{- $webPath := "/" -}}
+{{- if eq $routingMode "subfolder" -}}
+  {{- $webPath = printf "/%s" .Values.user.name -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}-ingress
+  labels:
+    {{- include "selkies-user.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    {{- with .Values.ingress.extraAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- if and .Values.ingress.tls.enabled $host }}
+  tls:
+    - secretName: {{ .Values.ingress.tls.secretName | quote }}
+      hosts:
+        - {{ $host | quote }}
+  {{- end }}
+  rules:
+    - {{- if $host }}
+      host: {{ $host | quote }}
+      http:
+      {{- else }}
+      http:
+      {{- end }}
+        paths:
+          {{- if and .Values.ssh.enabled (eq (.Values.ssh.mode | default "ingress-ws") "ingress-ws") }}
+          - path: {{ $sshPath | quote }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $name }}-svc
+                port:
+                  number: {{ .Values.ssh.wsBridgePort | default 2223 }}
+          {{- end }}
+          {{- if and .Values.rosBridge .Values.rosBridge.enabled }}
+          - path: {{ $zenohPath | quote }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $name }}-svc
+                port:
+                  number: {{ .Values.rosBridge.wsBridgePort | default 7448 }}
+          {{- end }}
+          - path: {{ $webPath | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}-svc
+                port:
+                  number: 80
+{{- end }}

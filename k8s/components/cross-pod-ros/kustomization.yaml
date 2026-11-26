@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# 啟用跨 Pod ROS 2 Hub 環境變數注入（搭配 charts/robotics-infra 的 rosZenohHub.enabled=true）
+# 使用者完全不需知道 K8s Service 名稱，進入容器執行 `ros-bridge hub` 即可自動加入跨 Pod 星狀網路
+patches:
+  - path: patch.yaml

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: selkies-pvc
+  labels:
+    app.kubernetes.io/storage-type: personal
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "local-path"
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: selkies-podman-pvc
+  labels:
+    app.kubernetes.io/storage-type: podman-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "local-path"
+  resources:
+    requests:
+      storage: 80Gi

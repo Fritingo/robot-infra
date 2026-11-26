@@ -1,0 +1,17 @@
+{{- if .Values.airGapRtcConfig.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.airGapRtcConfig.name | quote }}
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+data:
+  # 純內網離線專用：空 iceServers 徹底禁止 Selkies v2.2.1 接觸 stun.l.google.com / stun.cloudflare.com
+  rtc-config.json: |
+    {
+      "lifetimeDuration": "86400s",
+      "iceServers": [],
+      "blockStatus": "NOT_BLOCKED",
+      "iceTransportPolicy": "all"
+    }
+{{- end }}

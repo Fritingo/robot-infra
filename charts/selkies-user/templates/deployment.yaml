@@ -1,0 +1,320 @@
+{{- if .Values.user.enabled }}
+{{- $name := include "selkies-user.name" . -}}
+{{- $authSecret := .Values.user.auth.existingSecretName | default (printf "%s-auth" $name) -}}
+{{- $mode := .Values.transport.mode | default "webrtc-udp-mux" -}}
+{{- $useAirGapRtc := and (eq $mode "webrtc-udp-mux") .Values.transport.airGappedNoExternalStun -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "selkies-user.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # 搭配 RWO PVC、MIG 與 UDP hostPort 必須使用 Recreate，避免新舊 Pod 爭搶掛載與埠位
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "selkies-user.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "selkies-user.labels" . | nindent 8 }}
+    spec:
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.gpu.enabled .Values.gpu.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.gpu.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: selkies-desktop
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http-web
+              containerPort: {{ .Values.selkies.webPort }}
+              protocol: TCP
+            {{- if .Values.ssh.enabled }}
+            - name: ssh-ws
+              containerPort: {{ .Values.ssh.wsBridgePort | default 2223 }}
+              protocol: TCP
+            - name: ssh-tcp
+              containerPort: {{ .Values.ssh.sshdPort | default 2222 }}
+              protocol: TCP
+            {{- end }}
+            {{- if eq $mode "webrtc-udp-mux" }}
+            - name: webrtc-udp
+              containerPort: {{ .Values.transport.udpMuxPort | required "transport.udpMuxPort is required for webrtc-udp-mux mode" }}
+              hostPort: {{ .Values.transport.udpMuxPort }}
+              protocol: UDP
+            {{- if gt (int (.Values.transport.tcpMuxPort | default 0)) 0 }}
+            - name: webrtc-tcp
+              containerPort: {{ .Values.transport.tcpMuxPort }}
+              hostPort: {{ .Values.transport.tcpMuxPort }}
+              protocol: TCP
+            {{- end }}
+            {{- end }}
+            {{- if and .Values.rosBridge .Values.rosBridge.enabled }}
+            - name: zenoh-ws
+              containerPort: {{ .Values.rosBridge.wsBridgePort | default 7448 }}
+              protocol: TCP
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: http-web
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http-web
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          env:
+            - name: TZ
+              value: {{ .Values.user.timezone | default "Asia/Taipei" | quote }}
+
+            # --- 1. 每人獨立網頁與 Linux/SSH 帳密 ---
+            - name: SELKIES_PORT
+              value: {{ .Values.selkies.webPort | quote }}
+            - name: SELKIES_ENABLE_HTTPS
+              value: {{ .Values.selkies.enableHttps | quote }}
+            - name: SELKIES_ENABLE_BASIC_AUTH
+              value: {{ .Values.selkies.enableBasicAuth | quote }}
+            - name: SELKIES_BASIC_AUTH_USER
+              value: {{ .Values.user.auth.webUsername | default .Values.user.name | quote }}
+            - name: SELKIES_BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $authSecret }}
+                  key: WEB_PASSWORD
+            - name: PASSWD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $authSecret }}
+                  key: LINUX_PASSWORD
+
+            # --- 2. 編碼與畫質（Selkies v2.2.1 使用 h264enc 自動啟用 NVENC） ---
+            - name: SELKIES_ENCODER
+              value: {{ .Values.selkies.encoder | quote }}
+            - name: SELKIES_FRAMERATE
+              value: {{ .Values.selkies.framerate | quote }}
+            - name: SELKIES_VIDEO_BITRATE
+              value: {{ .Values.selkies.videoBitrate | quote }}
+            {{- if .Values.selkies.audioBitrate }}
+            - name: SELKIES_AUDIO_BITRATE
+              value: {{ .Values.selkies.audioBitrate | quote }}
+            {{- end }}
+            - name: SELKIES_ENABLE_RESIZE
+              value: {{ .Values.selkies.enableResize | quote }}
+            - name: SELKIES_WEBRTC_PACER
+              value: {{ .Values.selkies.webrtcPacer | quote }}
+            {{- if eq (.Values.ingress.routingMode | default "subdomain") "subfolder" }}
+            - name: SELKIES_SUBFOLDER
+              value: {{ printf "/%s" .Values.user.name | quote }}
+            {{- end }}
+
+            # --- 3. 傳輸層設定（webrtc-udp-mux / webrtc-coturn / websockets） ---
+            {{- if eq $mode "websockets" }}
+            - name: SELKIES_MODE
+              value: "websockets"
+            - name: SELKIES_ENABLE_DUAL_MODE
+              value: "false"
+            {{- else if eq $mode "webrtc-udp-mux" }}
+            - name: SELKIES_MODE
+              value: "webrtc"
+            - name: SELKIES_ENABLE_DUAL_MODE
+              value: {{ .Values.transport.enableDualMode | quote }}
+            - name: SELKIES_WEBRTC_ICE_LITE
+              value: "true"
+            - name: SELKIES_WEBRTC_UDP_MUX_PORT
+              value: {{ .Values.transport.udpMuxPort | quote }}
+            {{- if gt (int (.Values.transport.tcpMuxPort | default 0)) 0 }}
+            - name: SELKIES_WEBRTC_TCP_MUX_PORT
+              value: {{ .Values.transport.tcpMuxPort | quote }}
+            {{- end }}
+            {{- if .Values.transport.publicIpOverride }}
+            - name: SELKIES_WEBRTC_PUBLIC_IP
+              value: {{ .Values.transport.publicIpOverride | quote }}
+            {{- else }}
+            - name: SELKIES_WEBRTC_PUBLIC_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            {{- end }}
+            {{- if $useAirGapRtc }}
+            - name: SELKIES_RTC_CONFIG_JSON
+              value: "/etc/selkies/rtc-config.json"
+            {{- end }}
+            {{- else if eq $mode "webrtc-coturn" }}
+            - name: SELKIES_MODE
+              value: "webrtc"
+            - name: SELKIES_ENABLE_DUAL_MODE
+              value: {{ .Values.transport.enableDualMode | quote }}
+            - name: SELKIES_WEBRTC_ICE_LITE
+              value: "false"
+            - name: SELKIES_TURN_HOST
+              value: {{ .Values.transport.coturn.host | quote }}
+            - name: SELKIES_TURN_PORT
+              value: {{ .Values.transport.coturn.port | quote }}
+            - name: SELKIES_TURN_PROTOCOL
+              value: {{ .Values.transport.coturn.protocol | quote }}
+            - name: SELKIES_TURN_TLS
+              value: {{ .Values.transport.coturn.tls | quote }}
+            - name: SELKIES_STUN_HOST
+              value: {{ .Values.transport.coturn.host | quote }}
+            - name: SELKIES_STUN_PORT
+              value: {{ .Values.transport.coturn.port | quote }}
+            - name: SELKIES_TURN_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.transport.coturn.existingSecretName }}
+                  key: {{ .Values.transport.coturn.existingSecretKey }}
+            {{- end }}
+
+            # --- 4. GPU / Isaac Sim 離線路徑 / ROS 2 / Podman ---
+            {{- if .Values.gpu.enabled }}
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "all"
+            {{- end }}
+            {{- if .Values.storage.sharedIsaacPvc.enabled }}
+            - name: ISAAC_SIM_RO_DIR
+              value: {{ .Values.storage.sharedIsaacPvc.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.storage.sharedIsaacAssetsPvc.enabled }}
+            - name: ISAAC_ASSETS_RO_DIR
+              value: {{ .Values.storage.sharedIsaacAssetsPvc.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.user.rosDomainId }}
+            - name: ROS_DOMAIN_ID
+              value: {{ .Values.user.rosDomainId | quote }}
+            {{- end }}
+            {{- if and .Values.rosBridge .Values.rosBridge.rmwImplementation }}
+            - name: RMW_IMPLEMENTATION
+              value: {{ .Values.rosBridge.rmwImplementation | quote }}
+            {{- end }}
+            {{- if and .Values.rosBridge .Values.rosBridge.cycloneddsUri }}
+            - name: CYCLONEDDS_URI
+              value: {{ .Values.rosBridge.cycloneddsUri | quote }}
+            {{- end }}
+            {{- if and .Values.rosBridge .Values.rosBridge.hubEndpoint }}
+            - name: ROS_BRIDGE_HUB_ENDPOINT
+              value: {{ .Values.rosBridge.hubEndpoint | quote }}
+            {{- end }}
+            {{- if and .Values.rosBridge .Values.rosBridge.hubWssUrl }}
+            - name: ROS_BRIDGE_HUB_WSS_URL
+              value: {{ .Values.rosBridge.hubWssUrl | quote }}
+            {{- end }}
+            {{- if .Values.podman.enabled }}
+            {{- with .Values.podman.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.user.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory | quote }}
+              {{- if .Values.gpu.enabled }}
+              {{ .Values.gpu.resourceName }}: {{ .Values.gpu.count }}
+              {{- end }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+              memory: {{ .Values.resources.limits.memory | quote }}
+              {{- if .Values.gpu.enabled }}
+              {{ .Values.gpu.resourceName }}: {{ .Values.gpu.count }}
+              {{- end }}
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            {{- if $useAirGapRtc }}
+            - name: rtc-config
+              mountPath: /etc/selkies/rtc-config.json
+              subPath: rtc-config.json
+              readOnly: true
+            {{- end }}
+            {{- if .Values.storage.personalPvc.enabled }}
+            - name: personal-data
+              mountPath: {{ .Values.storage.personalPvc.mountPath }}
+            {{- end }}
+            {{- if .Values.storage.sharedIsaacPvc.enabled }}
+            - name: shared-isaac-sim
+              mountPath: {{ .Values.storage.sharedIsaacPvc.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.storage.sharedIsaacAssetsPvc.enabled }}
+            - name: shared-isaac-assets
+              mountPath: {{ .Values.storage.sharedIsaacAssetsPvc.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.podman.enabled }}
+            - name: podman-storage
+              mountPath: {{ .Values.podman.storage.mountPath }}
+            {{- if .Values.podman.mountTun }}
+            - name: dev-net-tun
+              mountPath: /dev/net/tun
+            {{- end }}
+            {{- end }}
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.shmSizeLimit }}
+        {{- if $useAirGapRtc }}
+        - name: rtc-config
+          configMap:
+            name: {{ $name }}-rtc-config
+        {{- end }}
+        {{- if .Values.storage.personalPvc.enabled }}
+        - name: personal-data
+          persistentVolumeClaim:
+            claimName: {{ $name }}-pvc
+        {{- end }}
+        {{- if .Values.storage.sharedIsaacPvc.enabled }}
+        - name: shared-isaac-sim
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.sharedIsaacPvc.existingClaim }}
+            readOnly: true
+        {{- end }}
+        {{- if .Values.storage.sharedIsaacAssetsPvc.enabled }}
+        - name: shared-isaac-assets
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.sharedIsaacAssetsPvc.existingClaim }}
+            readOnly: true
+        {{- end }}
+        {{- if .Values.podman.enabled }}
+        - name: podman-storage
+          persistentVolumeClaim:
+            claimName: {{ $name }}-podman-pvc
+        {{- if .Values.podman.mountTun }}
+        - name: dev-net-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+        {{- end }}
+        {{- end }}
+{{- end }}

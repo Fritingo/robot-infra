@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 選配（僅隔離私網無法使用 webrtc-udp-mux 時部署一次）：
+#   kubectl apply -k k8s/coturn
+namespace: robotics
+
+resources:
+  - ../shared
+  - coturn-configmap.yaml
+  - coturn-deployment.yaml
+
+secretGenerator:
+  - name: coturn-infra-turn-secret
+    envs:
+      - turn-secret.env
+    options:
+      disableNameSuffixHash: true

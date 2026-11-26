@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selkies
+spec:
+  template:
+    spec:
+      containers:
+        - name: selkies-desktop
+          env:
+            - name: SELKIES_MODE
+              value: "websockets"
+            - name: SELKIES_ENABLE_DUAL_MODE
+              value: "false"
+            - name: SELKIES_WEBRTC_ICE_LITE
+              value: "false"

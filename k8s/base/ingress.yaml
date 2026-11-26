@@ -1,0 +1,44 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: selkies-ingress
+  labels:
+    app.kubernetes.io/component: selkies
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: "nginx"
+  tls:
+    - secretName: "selkies-wildcard-tls"
+      hosts:
+        - "user.selkies.local"
+  rules:
+    - host: "user.selkies.local"
+      http:
+        paths:
+          - path: "/ssh"
+            pathType: Exact
+            backend:
+              service:
+                name: selkies-svc
+                port:
+                  number: 2223
+          - path: "/zenoh"
+            pathType: Exact
+            backend:
+              service:
+                name: selkies-svc
+                port:
+                  number: 7448
+          - path: "/"
+            pathType: Prefix
+            backend:
+              service:
+                name: selkies-svc
+                port:
+                  number: 80

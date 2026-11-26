@@ -1,0 +1,20 @@
+{{- if .Values.limitRange.enabled }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-limits
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: {{ .Values.limitRange.maxCpu | quote }}
+        memory: {{ .Values.limitRange.maxMemory | quote }}
+      defaultRequest:
+        cpu: {{ .Values.limitRange.defaultRequestCpu | quote }}
+        memory: {{ .Values.limitRange.defaultRequestMemory | quote }}
+      default:
+        cpu: {{ .Values.limitRange.defaultLimitCpu | quote }}
+        memory: {{ .Values.limitRange.defaultLimitMemory | quote }}
+{{- end }}

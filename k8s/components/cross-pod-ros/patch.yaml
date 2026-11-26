@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selkies
+spec:
+  template:
+    spec:
+      containers:
+        - name: selkies-desktop
+          env:
+            - name: ROS_BRIDGE_HUB_ENDPOINT
+              value: "tcp/robotics-infra-zenoh-hub.robotics.svc.cluster.local:7447"
+            - name: ROS_BRIDGE_HUB_WSS_URL
+              value: "wss://zenoh.selkies.local/zenoh"
+            - name: ROS_BRIDGE_INSECURE_TLS
+              value: "1"

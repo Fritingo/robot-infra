@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coturn-infra-config
+data:
+  turnserver.conf: |
+    listening-port=3478
+    min-port=50000
+    max-port=51000
+    realm=selkies.local
+    external-ip=192.168.10.50
+
+    use-auth-secret
+    fingerprint
+    no-cli
+    no-multicast-peers
+    no-tlsv1
+    no-tlsv1_1
+
+    allowed-peer-ip=10.244.0.0-10.244.255.255
+    denied-peer-ip=169.254.169.254
+    no-loopback-peers
+
+    log-file=stdout

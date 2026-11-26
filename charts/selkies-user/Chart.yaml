@@ -1,0 +1,6 @@
+apiVersion: v2
+name: selkies-user
+description: Single-user air-gapped Selkies v2.2.1 EGL Desktop (ROS 2 Jazzy + MoveIt 2 + Zenoh + Rootless Podman + SSH-over-Ingress + RTX MIG +gfx)
+type: application
+version: 1.0.0
+appVersion: "2.2.1"

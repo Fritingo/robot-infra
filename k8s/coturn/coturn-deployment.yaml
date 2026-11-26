@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coturn-infra
+  labels:
+    app.kubernetes.io/component: coturn
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: coturn
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: coturn
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/hostname: "edge-node-01"
+      containers:
+        - name: coturn
+          image: registry.local/robotics/coturn:4.6.2-alpine-patched
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TURN_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: coturn-infra-turn-secret
+                  key: TURN_SHARED_SECRET
+          args:
+            - "-c"
+            - "/etc/coturn/turnserver.conf"
+            - "--static-auth-secret=$(TURN_SHARED_SECRET)"
+          volumeMounts:
+            - name: coturn-config
+              mountPath: /etc/coturn/turnserver.conf
+              subPath: turnserver.conf
+              readOnly: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "4"
+              memory: "2Gi"
+      volumes:
+        - name: coturn-config
+          configMap:
+            name: coturn-infra-config

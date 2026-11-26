@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selkies
+spec:
+  template:
+    spec:
+      containers:
+        - name: selkies-desktop
+          resources:
+            requests:
+              smarter-devices/net_tun: 1
+            limits:
+              smarter-devices/net_tun: 1

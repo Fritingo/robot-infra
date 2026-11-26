@@ -1,0 +1,40 @@
+# ==============================================================================
+# coturn-infra（僅於 transport.mode=webrtc-coturn 時才需部署，全叢集部署一次即可）
+# 若辦公電腦可直接 UDP 連通 GPU Worker Node，請直接使用 webrtc-udp-mux（免部署此 Chart）
+# ==============================================================================
+
+image:
+  # 建議指向內網私有 Registry 推送好的自編修補版映像（見 coturn/Dockerfile）
+  repository: "registry.local/robotics/coturn"
+  tag: "4.6.2-alpine-patched"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# 固定排程於具備客戶端可直連 IP（例如邊界 / Ingress / 10GbE 節點）的單一節點
+nodeSelector:
+  kubernetes.io/hostname: "edge-node-01"
+
+tolerations: []
+
+# 客戶端用來連線至 Coturn 的內網固定 IP（對齊 selkies-user 的 transport.coturn.host）
+externalIp: "192.168.10.50"
+realm: "selkies.local"
+listeningPort: 3478
+minPort: 50000
+maxPort: 51000
+
+# 放行 K8s Pod CIDR，讓 Coturn 可透過叢集內網轉發 UDP 至各 Selkies Pod
+podCidr: "10.244.0.0-10.244.255.255"
+noTcpRelay: false
+
+# 實務建議透過 --set sharedSecret=... 或預建 existingSecretName 注入，勿提交明碼至 Git
+existingSecretName: ""
+sharedSecret: "ReplaceWithA64CharRandomSecretForCoturnHMACAuthDoNotUseDefault12"
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "4"
+    memory: "2Gi"

@@ -1,0 +1,39 @@
+# ==============================================================================
+# 警告：若叢集內同時存在 H200 / H100 / A100 / B300 節點，請勿直接用此檔取代全叢集
+# default-mig-parted-config，請改執行非破壞式合併腳本：
+#   ./deploy/gpu-operator/apply-pro6000-mig-safe.sh --dry-run <pro6000-node>
+#   ./deploy/gpu-operator/apply-pro6000-mig-safe.sh --apply   <pro6000-node>
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-mig-parted-config
+  namespace: gpu-operator
+data:
+  config.yaml: |
+    version: v1
+    mig-configs:
+      # 【必留】避免叢集其他未啟用 MIG 的節點找不到 all-disabled 而報錯
+      all-disabled:
+        - devices: all
+          mig-enabled: false
+
+      all-1g.24gb.gfx:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.24gb+gfx": 4
+
+      all-2g.48gb.gfx:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.48gb+gfx": 2
+
+      # ★ RTX PRO 6000 Blackwell (96GB) 主力混切：1 x 2g.48gb+gfx + 2 x 1g.24gb+gfx
+      rtx6000-mixed-1x2g-2x1g-gfx:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.48gb+gfx": 1
+            "1g.24gb+gfx": 2

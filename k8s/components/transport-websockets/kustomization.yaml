@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target:
+      kind: Deployment
+      name: selkies
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/3
+  - path: patch.yaml

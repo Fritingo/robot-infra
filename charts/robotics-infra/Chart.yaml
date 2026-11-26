@@ -1,0 +1,6 @@
+apiVersion: v2
+name: robotics-infra
+description: Cluster/namespace-level air-gapped robotics infrastructure (shared offline RTC config, tenant isolation NetworkPolicy, LimitRange, optional Coturn relay)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

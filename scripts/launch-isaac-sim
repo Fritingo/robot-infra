@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# launch-isaac-sim: Launch Isaac Sim 6.2 Standalone from Read-Only PVC (Air-Gapped Ready)
+#
+# 支援模式：
+#   launch-isaac-sim [kit args...]                 預設開啟完整 GUI (Selkies X11)
+#   launch-isaac-sim --headless [kit args...]      無頭 GPU 渲染模式 (--no-window)
+#   launch-isaac-sim --python <script.py> [args]   使用內建 python.sh 執行腳本
+#
+# 環境變數控制開關：
+#   ISAAC_SIM_RO_DIR=/opt/isaac-sim                共用唯讀 PVC 掛載路徑
+#   ISAAC_ASSETS_RO_DIR=/opt/isaac-sim-assets      共用離線資產 PVC（純內網無外網必備）
+#   ISAAC_USER_ROOT=/home/ubuntu/.isaac-sim-6.2    個人 PVC 持久化快取/資料/日誌根目錄
+#   ISAAC_ENABLE_ROS2_BRIDGE=1                     啟動時自動啟用 isaacsim.ros2.bridge
+#   ISAAC_SKIP_PREFLIGHT=1                         跳過 Vulkan / MIG 前置檢查
+#   ISAAC_DRY_RUN=1                                僅印出組裝後的環境與指令，不實際啟動
+# ==============================================================================
+
+if [[ -n "${ISAAC_SIM_RO_DIR:-}" ]]; then
+  ISAAC_SIM_RO_DIR="${ISAAC_SIM_RO_DIR}"
+elif [[ -x /opt/isaac-sim/isaac-sim.sh ]]; then
+  ISAAC_SIM_RO_DIR="/opt/isaac-sim"
+elif [[ -x "${ISAAC_SIM_STANDALONE_PATH:-/mnt/shared/isaac-sim-6.2}/isaac-sim.sh" ]]; then
+  ISAAC_SIM_RO_DIR="${ISAAC_SIM_STANDALONE_PATH:-/mnt/shared/isaac-sim-6.2}"
+else
+  ISAAC_SIM_RO_DIR="/opt/isaac-sim"
+fi
+
+if [[ -n "${ISAAC_ASSETS_RO_DIR:-}" ]]; then
+  ISAAC_ASSETS_RO_DIR="${ISAAC_ASSETS_RO_DIR}"
+elif [[ -d /opt/isaac-sim-assets ]]; then
+  ISAAC_ASSETS_RO_DIR="/opt/isaac-sim-assets"
+elif [[ -d "${ISAAC_SIM_ASSETS_PATH:-/mnt/shared/isaac-sim-assets}" ]]; then
+  ISAAC_ASSETS_RO_DIR="${ISAAC_SIM_ASSETS_PATH:-/mnt/shared/isaac-sim-assets}"
+else
+  ISAAC_ASSETS_RO_DIR=""
+fi
+
+USER_HOME="${HOME:-$(getent passwd 1000 | cut -d: -f6)}"
+ISAAC_USER_ROOT="${ISAAC_USER_ROOT:-${USER_HOME}/.isaac-sim-6.2}"
+ISAAC_KIT_PORTABLE_ROOT="${ISAAC_USER_ROOT}/kit"
+ISAAC_CACHE_ROOT="${ISAAC_USER_ROOT}/cache"
+ISAAC_XDG_ROOT="${ISAAC_USER_ROOT}/xdg"
+ISAAC_TMP_DIR="${ISAAC_TMP_DIR:-/tmp/isaac-sim-${USER:-ubuntu}}"
+
+MODE="gui"
+USER_ARGS=()
+
+# ------------------------------------------------------------------------------
+# 1. 解析腳本模式參數（其餘參數完整透傳給 Isaac Sim 或 Python 腳本）
+# ------------------------------------------------------------------------------
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    --headless)
+      MODE="headless"
+      shift
+      ;;
+    --python|python)
+      MODE="python"
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo "[ERROR] --python 模式需要指定腳本路徑，例如：launch-isaac-sim --python my_sim.py" >&2
+        exit 1
+      fi
+      ;;
+    -h|--help)
+      sed -n '4,19p' "$0"
+      exit 0
+      ;;
+  esac
+fi
+USER_ARGS=("$@")
+
+# ------------------------------------------------------------------------------
+# 2. 檢查唯讀本體 PVC 與個人可寫 PVC 狀態
+# ------------------------------------------------------------------------------
+if [[ ! -d "$ISAAC_SIM_RO_DIR" || ! -x "${ISAAC_SIM_RO_DIR}/isaac-sim.sh" ]]; then
+  echo "[ERROR] 找不到可執行的 Isaac Sim 6.2：${ISAAC_SIM_RO_DIR}/isaac-sim.sh" >&2
+  echo "        請確認共用唯讀 PVC (sharedIsaacPvc) 已正確掛載至 ${ISAAC_SIM_RO_DIR}。" >&2
+  exit 1
+fi
+
+mkdir -p \
+  "${ISAAC_KIT_PORTABLE_ROOT}/cache" \
+  "${ISAAC_KIT_PORTABLE_ROOT}/data" \
+  "${ISAAC_KIT_PORTABLE_ROOT}/logs" \
+  "${ISAAC_CACHE_ROOT}/glcache" \
+  "${ISAAC_CACHE_ROOT}/cuda" \
+  "${ISAAC_CACHE_ROOT}/warp" \
+  "${ISAAC_CACHE_ROOT}/mesa" \
+  "${ISAAC_CACHE_ROOT}/pycache" \
+  "${ISAAC_XDG_ROOT}/cache" \
+  "${ISAAC_XDG_ROOT}/data" \
+  "${ISAAC_XDG_ROOT}/config" \
+  "${ISAAC_TMP_DIR}"
+
+if [[ ! -w "$ISAAC_USER_ROOT" ]]; then
+  echo "[ERROR] 個人快取根目錄無法寫入：${ISAAC_USER_ROOT}" >&2
+  echo "        請確認個人 PVC (/home/ubuntu) 的 fsGroup 與權限設定。" >&2
+  exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# 3. 設定所有快取、日誌、Bytecode、離線資產、ROS 2 Jazzy 與 Vulkan 環境變數
+# ------------------------------------------------------------------------------
+export ISAAC_USER_ROOT
+export ISAAC_KIT_PORTABLE_ROOT
+
+# EULA 與隱私同意（自動化與容器環境必備）
+export OMNI_KIT_ACCEPT_EULA="${OMNI_KIT_ACCEPT_EULA:-YES}"
+export ACCEPT_EULA="${ACCEPT_EULA:-Y}"
+export PRIVACY_CONSENT="${PRIVACY_CONSENT:-Y}"
+
+# 離線資產根目錄（純內網環境避免嘗試連外下載 Omniverse / S3 資產）
+if [[ -n "$ISAAC_ASSETS_RO_DIR" && -d "$ISAAC_ASSETS_RO_DIR" ]]; then
+  export ISAACSIM_ASSET_ROOT="${ISAACSIM_ASSET_ROOT:-$ISAAC_ASSETS_RO_DIR}"
+fi
+
+# NVIDIA OpenGL / Vulkan 著色器磁碟快取（關閉自動清理，避免大型 RTX Shader 被洗掉）
+export __GL_SHADER_DISK_CACHE=1
+export __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1
+export __GL_SHADER_DISK_CACHE_PATH="${ISAAC_CACHE_ROOT}/glcache"
+
+# CUDA JIT / PTX 快取（4 GiB 上限）
+export CUDA_CACHE_DISABLE=0
+export CUDA_CACHE_PATH="${ISAAC_CACHE_ROOT}/cuda"
+export CUDA_CACHE_MAXSIZE="${CUDA_CACHE_MAXSIZE:-4294967296}"
+
+# NVIDIA Warp 核心編譯快取
+export WARP_CACHE_PATH="${ISAAC_CACHE_ROOT}/warp"
+
+# Mesa / 備援著色器快取與 Python 3.12 Bytecode 重導向
+export MESA_SHADER_CACHE_DIR="${ISAAC_CACHE_ROOT}/mesa"
+export PYTHONPYCACHEPREFIX="${ISAAC_CACHE_ROOT}/pycache"
+
+# XDG 目錄隔離至版本專屬資料夾（保護 Omniverse Client Library / Hub 寫入）
+export XDG_CACHE_HOME="${ISAAC_XDG_ROOT}/cache"
+export XDG_DATA_HOME="${ISAAC_XDG_ROOT}/data"
+export XDG_CONFIG_HOME="${ISAAC_XDG_ROOT}/config"
+
+# 暫存檔放容器內 /tmp，避免無謂消耗 PVC IOPS
+export TMPDIR="${ISAAC_TMP_DIR}"
+
+# 自動偵測 X11 DISPLAY（包含 SSH 終端機啟動時自動對應 Selkies 的 :20 / :0）
+if [[ -z "${DISPLAY:-}" ]]; then
+  for sock in /tmp/.X11-unix/X*; do
+    if [[ -S "$sock" ]]; then
+      export DISPLAY=":${sock##*X}"
+      break
+    fi
+  done
+fi
+
+# 強制鎖定 NVIDIA Vulkan ICD，防止誤選到軟體渲染 (llvmpipe / lvp_icd)
+if [[ -z "${VK_DRIVER_FILES:-}" && -z "${VK_ICD_FILENAMES:-}" ]]; then
+  for icd in \
+    /usr/share/vulkan/icd.d/nvidia_icd.json \
+    /etc/vulkan/icd.d/nvidia_icd.json; do
+    if [[ -f "$icd" ]]; then
+      export VK_DRIVER_FILES="$icd"
+      export VK_ICD_FILENAMES="$icd"
+      break
+    fi
+  done
+fi
+
+# 若尚未載入系統 ROS 2 Jazzy，自動載入（不與 Isaac Sim 內建 ros2.core/jazzy/lib 混用）
+if [[ -z "${AMENT_PREFIX_PATH:-}" && -f /opt/ros/jazzy/setup.bash ]]; then
+  set +u
+  # shellcheck disable=SC1091
+  source /opt/ros/jazzy/setup.bash
+  set -u
+fi
+export ROS_DISTRO="${ROS_DISTRO:-jazzy}"
+export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file:///etc/ros/cyclonedds.xml}"
+
+# ------------------------------------------------------------------------------
+# 4. RTX PRO 6000 +gfx MIG 與顯示環境前置檢查
+# ------------------------------------------------------------------------------
+if [[ "${ISAAC_SKIP_PREFLIGHT:-0}" != "1" ]]; then
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    if ! nvidia-smi -L 2>/dev/null | grep -qi "GPU\|MIG"; then
+      echo "[WARN] nvidia-smi 未偵測到可用 GPU 或 MIG 裝置，Isaac Sim 可能無法啟動。" >&2
+    fi
+  fi
+
+  if command -v vulkaninfo >/dev/null 2>&1; then
+    VK_DEVS="$(vulkaninfo --summary 2>/dev/null | grep -i 'deviceName' || true)"
+    if [[ -z "$VK_DEVS" ]] || ! echo "$VK_DEVS" | grep -qi "nvidia"; then
+      echo "[ERROR] Vulkan 未偵測到 NVIDIA 硬體渲染裝置！" >&2
+      echo "        請確認：" >&2
+      echo "        1) 此 Pod 取得的是 RTX PRO 6000 的 +gfx MIG Profile（非純運算 MIG）" >&2
+      echo "        2) 環境變數 NVIDIA_DRIVER_CAPABILITIES=all 已正確注入" >&2
+      echo "        若確定要忽略檢查強制執行，請加上 ISAAC_SKIP_PREFLIGHT=1" >&2
+      exit 1
+    fi
+  fi
+
+  if [[ "$MODE" == "gui" && -z "${DISPLAY:-}" ]]; then
+    echo "[ERROR] GUI 模式需要設定 DISPLAY（請在 Selkies 桌面終端機執行，或改用 --headless）。" >&2
+    exit 1
+  fi
+fi
+
+# ------------------------------------------------------------------------------
+# 5. 組合 Kit 參數並啟動（工作目錄切至個人 PVC，避免相對路徑誤寫唯讀目錄）
+# ------------------------------------------------------------------------------
+cd "${USER_HOME}"
+
+if [[ "$MODE" == "python" ]]; then
+  if [[ -f "${ISAAC_SIM_RO_DIR}/kit/portable.txt" ]]; then
+    echo "[WARN] 偵測到 ${ISAAC_SIM_RO_DIR}/kit/portable.txt。" >&2
+    echo "       執行 Standalone Python 腳本時，建議於 SimulationApp 的 extra_args 加入：" >&2
+    echo "       ['--portable-root', os.environ['ISAAC_KIT_PORTABLE_ROOT']]" >&2
+  fi
+
+  CMD=("${ISAAC_SIM_RO_DIR}/python.sh" "${USER_ARGS[@]}")
+else
+  # 單一 MIG Slice 僅暴露 1 顆邏輯 GPU，關閉 multiGpu 探測、鎖定 activeGpu=0 並關閉離線環境遙測
+  KIT_ARGS=(
+    --portable-root "${ISAAC_KIT_PORTABLE_ROOT}"
+    --/renderer/multiGpu/enabled=false
+    --/renderer/activeGpu=0
+    --/app/file/ignoreUnsavedOnExit=true
+    --/exts/omni.kit.telemetry/enabled=false
+  )
+
+  if [[ -n "${ISAACSIM_ASSET_ROOT:-}" ]]; then
+    KIT_ARGS+=("--/persistent/isaac/asset_root/default=${ISAACSIM_ASSET_ROOT}")
+  fi
+
+  if [[ "$MODE" == "headless" ]]; then
+    KIT_ARGS+=(--no-window)
+  fi
+
+  if [[ "${ISAAC_ENABLE_ROS2_BRIDGE:-0}" == "1" ]]; then
+    KIT_ARGS+=(--enable isaacsim.ros2.bridge)
+  fi
+
+  CMD=("${ISAAC_SIM_RO_DIR}/isaac-sim.sh" "${KIT_ARGS[@]}" "${USER_ARGS[@]}")
+fi
+
+if [[ "${ISAAC_DRY_RUN:-0}" == "1" ]]; then
+  echo "=== [launch-isaac-sim dry-run] ==="
+  env | grep -E '^(ISAAC|OMNI_|ACCEPT_EULA|__GL_SHADER|CUDA_CACHE|WARP_CACHE|PYTHONPYCACHE|XDG_|VK_|ROS_|RMW_|ZENOH_|DISPLAY)' | sort
+  echo "--- Command ---"
+  printf '%q ' "${CMD[@]}"
+  printf '\n'
+  exit 0
+fi
+
+exec "${CMD[@]}"

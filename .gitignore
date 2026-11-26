@@ -1,0 +1,34 @@
+# Large binary image exports, split chunks & release bundles (never commit to Git)
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.bin
+*.sha256
+v1_parts/
+v2_parts/
+v3_parts/
+parts_*/
+_tmp_*/
+.tmp-*
+push_chunks*.ps1
+restore*.sh
+
+# Local secrets, TLS private keys & sensitive overrides
+*.key
+*.pem
+*.crt
+*.pfx
+*.p12
+*.local.env
+*.secret.yaml
+*.secret.yml
+kubeconfig*
+
+# OS / Editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/

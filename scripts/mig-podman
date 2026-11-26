@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+set -euo pipefail
+shopt -s nullglob
+
+# ==============================================================================
+# mig-podman: Rootless Podman wrapper inside non-privileged K8s MIG Pods
+#
+# 環境變數控制開關：
+#   MIG_PODMAN_NO_GPU=1       關閉 MIG GPU 裝置與驅動庫直通
+#   MIG_PODMAN_NO_X11=1       關閉 X11 畫面直通（適合純無頭訓練/批次任務）
+#   MIG_PODMAN_ZENOH=auto     auto(預設,有設定就透傳) | 1(強制啟用 rmw_zenoh_cpp) | 0(關閉)
+#   MIG_PODMAN_DRY_RUN=1      僅印出最終組裝的 podman 指令，不實際執行
+# ==============================================================================
+
+PODMAN_BIN="${PODMAN_BIN:-/usr/bin/podman}"
+
+if [[ $# -eq 0 ]]; then
+  exec "$PODMAN_BIN" --help
+fi
+
+SUBCMD="$1"
+shift
+
+# 非 run / create 子指令直接透傳給原生 podman
+if [[ "$SUBCMD" != "run" && "$SUBCMD" != "create" ]]; then
+  exec "$PODMAN_BIN" "$SUBCMD" "$@"
+fi
+
+INJECT_ARGS=()
+
+# ------------------------------------------------------------------------------
+# 1. 檢查使用者是否已自行指定 network / ipc / cgroups，避免覆寫使用者意圖
+# ------------------------------------------------------------------------------
+HAS_NET=0
+HAS_IPC=0
+HAS_CGROUPS=0
+for arg in "$@"; do
+  [[ "$arg" == "--" ]] && break
+  case "$arg" in
+    --network|--network=*|--net|--net=*) HAS_NET=1 ;;
+    --ipc|--ipc=*)                       HAS_IPC=1 ;;
+    --cgroups|--cgroups=*)               HAS_CGROUPS=1 ;;
+  esac
+done
+
+# 關閉標籤重貼與 cgroup 委派（非 systemd 的無特權 K8s Pod 必備）
+INJECT_ARGS+=(--security-opt label=disable)
+if [[ "$HAS_CGROUPS" -eq 0 ]]; then
+  INJECT_ARGS+=(--cgroups=disabled)
+fi
+
+# 預設共享「當前 Pod 內部」的網路與 /dev/shm（不影響 K8s Worker Node）
+if [[ "$HAS_NET" -eq 0 ]]; then
+  INJECT_ARGS+=(--network=host)
+fi
+if [[ "$HAS_IPC" -eq 0 ]]; then
+  INJECT_ARGS+=(--ipc=host)
+fi
+
+# ------------------------------------------------------------------------------
+# 2. 自動直通當前 Pod 的 MIG GPU 裝置、DRM 節點與 NVIDIA 驅動函式庫
+# ------------------------------------------------------------------------------
+if [[ "${MIG_PODMAN_NO_GPU:-0}" != "1" ]]; then
+  # 2a. 字元裝置節點（含 Linux MIG 的 /dev/nvidia-caps/*、/dev/dri/*，以及 WSL2 本機測試的 /dev/dxg）
+  GPU_DEVS=(
+    /dev/nvidiactl
+    /dev/nvidia-uvm
+    /dev/nvidia-uvm-tools
+    /dev/nvidia-modeset
+    /dev/nvidia[0-9]*
+    /dev/nvidia-caps/*
+    /dev/dri/renderD*
+    /dev/dri/card*
+    /dev/dxg
+  )
+  for dev in "${GPU_DEVS[@]}"; do
+    if [[ -c "$dev" ]]; then
+      INJECT_ARGS+=(--device "${dev}:${dev}")
+    fi
+  done
+
+  # 2b. NVIDIA 驅動共享函式庫（使用 -e 檢查目標存在，自動略過失效符號連結）
+  LIB_DIR="/usr/lib/x86_64-linux-gnu"
+  if [[ -d "$LIB_DIR" ]]; then
+    NV_LIBS=(
+      "$LIB_DIR"/libcuda.so*
+      "$LIB_DIR"/libnvidia-*.so*
+      "$LIB_DIR"/libnvcuvid.so*
+      "$LIB_DIR"/libnvoptix.so*
+      "$LIB_DIR"/libEGL_nvidia.so*
+      "$LIB_DIR"/libGLX_nvidia.so*
+      "$LIB_DIR"/libGLESv1_CM_nvidia.so*
+      "$LIB_DIR"/libGLESv2_nvidia.so*
+      "$LIB_DIR"/libvdpau_nvidia.so*
+      "$LIB_DIR"/gbm/nvidia-drm_gbm.so
+      "$LIB_DIR"/libdxcore.so*
+    )
+    for lib in "${NV_LIBS[@]}"; do
+      if [[ -e "$lib" ]]; then
+        INJECT_ARGS+=(-v "${lib}:${lib}:ro")
+      fi
+    done
+  fi
+
+  # 2b-wsl. 若位於 Windows Docker Desktop / WSL2 本機測試環境，唯讀掛載 /usr/lib/wsl（純 Linux K8s 節點無此目錄，零影響）
+  if [[ -d /usr/lib/wsl ]]; then
+    INJECT_ARGS+=(-v "/usr/lib/wsl:/usr/lib/wsl:ro")
+  fi
+
+  # 2c. nvidia-smi 與 EGL / Vulkan ICD 設定檔
+  NV_EXTRAS=(
+    /usr/bin/nvidia-smi
+    /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+    /usr/share/vulkan/icd.d/nvidia_icd.json
+    /etc/vulkan/icd.d/nvidia_icd.json
+    /usr/share/vulkan/implicit_layer.d/nvidia_layers.json
+  )
+  for extra in "${NV_EXTRAS[@]}"; do
+    if [[ -e "$extra" ]]; then
+      INJECT_ARGS+=(-v "${extra}:${extra}:ro")
+    fi
+  done
+
+  # 2d. 透傳 GPU / MIG 與 OpenGL 離屏渲染環境變數
+  for var in NVIDIA_VISIBLE_DEVICES CUDA_VISIBLE_DEVICES NVIDIA_DRIVER_CAPABILITIES; do
+    if [[ -n "${!var:-}" ]]; then
+      INJECT_ARGS+=(-e "${var}=${!var}")
+    fi
+  done
+  INJECT_ARGS+=(
+    -e "__NV_PRIME_RENDER_OFFLOAD=1"
+    -e "__GLX_VENDOR_LIBRARY_NAME=nvidia"
+  )
+fi
+
+# ------------------------------------------------------------------------------
+# 3. X11 顯示通道直通（銜接外層 Selkies Xvfb / Xorg，自動偵測 :20 或 :0）
+# ------------------------------------------------------------------------------
+if [[ "${MIG_PODMAN_NO_X11:-0}" != "1" ]]; then
+  RESOLVED_DISPLAY="${DISPLAY:-}"
+  if [[ -z "$RESOLVED_DISPLAY" ]]; then
+    for sock in /tmp/.X11-unix/X*; do
+      if [[ -S "$sock" ]]; then
+        RESOLVED_DISPLAY=":${sock##*X}"
+        break
+      fi
+    done
+  fi
+
+  if [[ -n "$RESOLVED_DISPLAY" ]]; then
+    INJECT_ARGS+=(-e "DISPLAY=${RESOLVED_DISPLAY}")
+    if [[ -d /tmp/.X11-unix ]]; then
+      INJECT_ARGS+=(-v "/tmp/.X11-unix:/tmp/.X11-unix:rw")
+    fi
+    if [[ -n "${XAUTHORITY:-}" && -f "${XAUTHORITY}" ]]; then
+      INJECT_ARGS+=(
+        -v "${XAUTHORITY}:/tmp/.mig-podman.xauth:ro"
+        -e "XAUTHORITY=/tmp/.mig-podman.xauth"
+      )
+    fi
+  fi
+fi
+
+# ------------------------------------------------------------------------------
+# 4. ROS 2 CycloneDDS（預設）與可選 Zenoh 環境變數（含本地設定檔自動唯讀掛載）
+# ------------------------------------------------------------------------------
+ZENOH_MODE="${MIG_PODMAN_ZENOH:-auto}"
+if [[ "$ZENOH_MODE" != "0" && "$ZENOH_MODE" != "false" ]]; then
+  for var in ROS_DOMAIN_ID ROS_LOCALHOST_ONLY ROS_AUTOMATIC_DISCOVERY_RANGE CYCLONEDDS_URI FASTRTPS_DEFAULT_PROFILES_FILE; do
+    if [[ -n "${!var:-}" ]]; then
+      val="${!var}"
+      INJECT_ARGS+=(-e "${var}=${val}")
+      # 若為 file:///path/to/xml 或實體檔案路徑，自動唯讀掛載進內層容器，避免找不到 /etc/ros/cyclonedds.xml
+      cfg_path="${val#file://}"
+      if [[ "$cfg_path" == /* && -f "$cfg_path" ]]; then
+        INJECT_ARGS+=(-v "${cfg_path}:${cfg_path}:ro")
+      fi
+    fi
+  done
+
+  if [[ "$ZENOH_MODE" == "1" || "$ZENOH_MODE" == "true" ]]; then
+    INJECT_ARGS+=(-e "RMW_IMPLEMENTATION=rmw_zenoh_cpp")
+  elif [[ -n "${RMW_IMPLEMENTATION:-}" ]]; then
+    INJECT_ARGS+=(-e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}")
+  fi
+
+  while IFS='=' read -r k _; do
+    if [[ "$k" == ZENOH_* || "$k" == "RUST_LOG" ]]; then
+      val="${!k}"
+      INJECT_ARGS+=(-e "${k}=${val}")
+      if [[ "$k" == *_CONFIG_URI && -f "$val" ]]; then
+        INJECT_ARGS+=(-v "${val}:${val}:ro")
+      fi
+    fi
+  done < <(env)
+fi
+
+# ------------------------------------------------------------------------------
+# 5. 執行或 Dry-Run 輸出
+# ------------------------------------------------------------------------------
+if [[ "${MIG_PODMAN_DRY_RUN:-0}" == "1" ]]; then
+  printf '[mig-podman dry-run]'
+  printf ' %q' "$PODMAN_BIN" "$SUBCMD" "${INJECT_ARGS[@]}" "$@"
+  printf '\n'
+  exit 0
+fi
+
+exec "$PODMAN_BIN" "$SUBCMD" "${INJECT_ARGS[@]}" "$@"

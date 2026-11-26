@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <General>
+      <!-- 僅綁定 Pod 內部 loopback (lo)：外層容器與內層 Podman/Docker (--network=host) 直通，絕不外洩 multicast 至宿主機或 K8s CNI -->
+      <Interfaces>
+        <NetworkInterface name="lo" priority="default" multicast="default" />
+      </Interfaces>
+      <AllowMulticast>spdp</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <!-- 顯式 Unicast Peer 確保就算核心/容器環境停用 loopback multicast 仍可 100% 穩定發現外層與內層容器節點 -->
+      <Peers>
+        <Peer address="127.0.0.1" />
+      </Peers>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

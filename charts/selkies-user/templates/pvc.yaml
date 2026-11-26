@@ -1,0 +1,45 @@
+{{- if and .Values.user.enabled .Values.storage.personalPvc.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "selkies-user.name" . }}-pvc
+  labels:
+    {{- include "selkies-user.labels" . | nindent 4 }}
+    app.kubernetes.io/storage-type: personal
+  {{- if .Values.storage.personalPvc.keepOnDelete }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  {{- end }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.storage.personalPvc.storageClassName }}
+  storageClassName: {{ .Values.storage.personalPvc.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.personalPvc.size }}
+{{- end }}
+{{- if and .Values.user.enabled .Values.podman.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "selkies-user.name" . }}-podman-pvc
+  labels:
+    {{- include "selkies-user.labels" . | nindent 4 }}
+    app.kubernetes.io/storage-type: podman-storage
+  {{- if .Values.podman.storage.keepOnDelete }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  {{- end }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.podman.storage.storageClassName }}
+  storageClassName: {{ .Values.podman.storage.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.podman.storage.size }}
+{{- end }}

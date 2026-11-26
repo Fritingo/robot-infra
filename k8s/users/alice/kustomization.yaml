@@ -1,0 +1,55 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 單人部署或更新 alice（完全不影響其他使用者）：
+#   kubectl apply -k k8s/users/alice
+namespace: robotics
+namePrefix: alice-
+
+resources:
+  - ../../base
+
+# 按需啟用功能積木（生產環境建議開啟 seccomp-podman-localhost）：
+components: []
+  # - ../../components/seccomp-podman-localhost
+  # - ../../components/smarter-device-tun
+  # - ../../components/cross-pod-ros
+  # - ../../components/shared-isaac-sim
+  # - ../../components/apparmor-unconfined
+  # - ../../components/transport-websockets
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/user: alice
+
+secretGenerator:
+  - name: selkies-auth
+    envs:
+      - auth.env
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  - path: patch.yaml
+  # 修改 UDP Mux 埠位為 50002（與 dio 的 50001 隔離，零衝突）
+  - target:
+      kind: Deployment
+      name: selkies
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/ports/3/containerPort
+        value: 50002
+      - op: replace
+        path: /spec/template/spec/containers/0/ports/3/hostPort
+        value: 50002
+  - target:
+      kind: Ingress
+      name: selkies-ingress
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: alice.selkies.local
+      - op: replace
+        path: /spec/rules/0/host
+        value: alice.selkies.local

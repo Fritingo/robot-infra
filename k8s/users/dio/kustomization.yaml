@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 單人部署或更新 dio（完全不影響其他使用者）：
+#   kubectl apply -k k8s/users/dio
+namespace: robotics
+namePrefix: dio-
+
+resources:
+  - ../../base
+
+# 按需啟用功能積木（生產環境建議開啟 seccomp-podman-localhost）：
+components: []
+  # - ../../components/seccomp-podman-localhost
+  # - ../../components/smarter-device-tun
+  # - ../../components/cross-pod-ros
+  # - ../../components/shared-isaac-sim
+  # - ../../components/apparmor-unconfined
+  # - ../../components/transport-websockets
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/user: dio
+
+secretGenerator:
+  - name: selkies-auth
+    envs:
+      - auth.env
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  - path: patch.yaml
+  - target:
+      kind: Ingress
+      name: selkies-ingress
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: dio.selkies.local
+      - op: replace
+        path: /spec/rules/0/host
+        value: dio.selkies.local

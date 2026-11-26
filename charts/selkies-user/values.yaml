@@ -1,0 +1,217 @@
+# ==============================================================================
+# selkies-user 預設骨架（專為純內網 / 無外網 + 單一 Ingress IP 受限環境設計）
+# 實際部署請搭配 -f deploy/shared-defaults.yaml -f deploy/users/<user>.yaml
+# ==============================================================================
+
+user:
+  name: "demo"
+  enabled: true
+  timezone: "Asia/Taipei"
+  rosDomainId: "11"
+  auth:
+    # 若已於叢集預建 Secret，可填 existingSecretName（需包含 WEB_PASSWORD 與 LINUX_PASSWORD）
+    existingSecretName: ""
+    webUsername: ""
+    webPassword: ""
+    linuxPassword: ""
+  extraEnv: []
+
+image:
+  # 純內網私有 Registry 路徑（避免連外拉取 ghcr.io / docker.io）
+  repository: "registry.local/robotics/robot-infra"
+  tag: "v3"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  #  - name: regcred
+
+selkies:
+  webPort: 8080
+  # Selkies v2.2.1 (pixelflux)：首項 h264enc 為預設並自動啟用 NVENC；列完整清單才不會鎖死網頁 UI 選單
+  encoder: "h264enc,h265enc,vp9enc,av1enc,h264enc-striped,jpeg"
+  framerate: "60"
+  videoBitrate: "12000"
+  # 留空保留內建預設 128000 且不鎖定音訊位元率下拉選單（填單一值會鎖死選單）
+  audioBitrate: ""
+  enableResize: "true"
+  enableBasicAuth: "true"
+  enableHttps: "false"
+  webrtcPacer: "true"
+
+# ==============================================================================
+# 傳輸模式（依內網拓撲三選一；所有模式都只需「單一 Ingress IP」，零額外 LoadBalancer IP）
+#
+#   webrtc-udp-mux （★ 推薦預設：多人延遲最低、水平分散至各 GPU 節點、免 Coturn、零外網 STUN）
+#                  前提：辦公電腦可直接 UDP 連通 GPU Worker Node 的 status.hostIP:udpMuxPort
+#   webrtc-coturn  （隔離私網備案：客戶端只能連邊界單一 Coturn IP，全叢集共用 coturn-infra）
+#   websockets     （極限封鎖備案：連 UDP 都完全封鎖，100% 走單一 Ingress TCP 443）
+# ==============================================================================
+transport:
+  mode: "webrtc-udp-mux"
+  # 允許使用者於網頁側邊欄在 WebRTC / WebSockets 間切換（UDP 被擋時自動保底）
+  enableDualMode: true
+  # 純內網必開：注入空 iceServers 的 rtc-config.json，徹底禁止接觸 stun.l.google.com / stun.cloudflare.com
+  airGappedNoExternalStun: true
+
+  # [mode=webrtc-udp-mux] 每位使用者分配 1 個全域唯一 UDP 埠（例如 50001..50050）
+  udpMuxPort: 50001
+  # 選配：同時於同一埠號提供 ICE-TCP 被動候選（0=關閉）
+  tcpMuxPort: 0
+  # 留空時透過 Downward API 自動抓取排程到的節點 status.hostIP；有靜態 1:1 NAT 才需手填
+  publicIpOverride: ""
+
+  # [mode=webrtc-coturn] 指向內部 coturn-infra（僅 mode=webrtc-coturn 時生效）
+  coturn:
+    host: "192.168.10.50"
+    port: "3478"
+    protocol: "udp"
+    tls: "false"
+    existingSecretName: "coturn-infra-turn-secret"
+    existingSecretKey: "TURN_SHARED_SECRET"
+
+# ==============================================================================
+# SSH 經由個人 Ingress（零 NodePort、零獨立 IP，完全複用 Port 443）
+# ==============================================================================
+ssh:
+  enabled: true
+  mode: "ingress-ws"   # ingress-ws（推薦，純 443 WSS） | tcp-ingress（配合 Ingress-NGINX tcp-services）
+  sshdPort: 2222
+  wsBridgePort: 2223
+  ingressPath: "/ssh"
+
+# ==============================================================================
+# v3 ROS 2 預設 CycloneDDS + 經由單一 Ingress /zenoh 跨 Pod 橋接（零額外 IP、免查 K8s svc）
+# ==============================================================================
+rosBridge:
+  enabled: true
+  rmwImplementation: "rmw_cyclonedds_cpp"
+  cycloneddsUri: "file:///etc/ros/cyclonedds.xml"
+  wsBridgePort: 7448
+  ingressPath: "/zenoh"
+  # 選配：若 robotics-infra 已啟用 rosZenohHub.enabled=true，可填入自動注入（使用者執行 ros-bridge hub 免查 svc）
+  hubEndpoint: ""
+  hubWssUrl: ""
+
+# ==============================================================================
+# Ingress-NGINX（單一 IP 多人分流，無需每人配獨立 IP）
+#   routingMode: "subdomain" -> https://<user>.<baseDomain>/ 與 wss://<user>.<baseDomain>/ssh
+#   routingMode: "subfolder" -> https://<host>/<user>/ 與 wss://<host>/<user>/ssh（無需 Wildcard DNS）
+# ==============================================================================
+ingress:
+  enabled: true
+  className: "nginx"
+  routingMode: "subdomain"
+  # subdomain 模式使用 baseDomain；subfolder 模式使用單一 host（留空則連裸 IP 也能路由）
+  baseDomain: "selkies.local"
+  host: "selkies.local"
+  tls:
+    enabled: true
+    secretName: "selkies-wildcard-tls"
+  extraAnnotations: {}
+
+# ==============================================================================
+# RTX PRO 6000 Blackwell +gfx MIG（含 RT Cores、Vulkan/EGL 與 NVENC）
+# ==============================================================================
+gpu:
+  enabled: true
+  # 依 kubectl describe node 實際 Allocatable 填入（例如 nvidia.com/mig-2g.48gb.gfx 或 nvidia.com/mig-1g.24gb.gfx）
+  resourceName: "nvidia.com/mig-2g.48gb.gfx"
+  count: 1
+  # 雙重節點標籤防呆：僅排程至已標記的 RTX PRO 6000 +gfx 節點，絕不碰觸 H200 / H100 / A100 / B300
+  nodeSelector:
+    robot-infra/gpu-pool: "rtx-pro-6000"
+    gpu.capability/rtx-gfx: "true"
+
+tolerations: []
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: robot-infra/gpu-pool
+              operator: In
+              values:
+                - rtx-pro-6000
+            - key: nvidia.com/gpu.product
+              operator: NotIn
+              values:
+                - NVIDIA-A100-SXM4-40GB
+                - NVIDIA-A100-SXM4-80GB
+                - NVIDIA-A100-PCIE-40GB
+                - NVIDIA-A100-80GB-PCIe
+                - NVIDIA-H100-80GB-HBM3
+                - NVIDIA-H100-PCIe
+                - NVIDIA-H100-NVL
+                - NVIDIA-H200
+                - NVIDIA-H200-SXM5-141GB
+                - NVIDIA-H200-NVL
+                - NVIDIA-B200
+                - NVIDIA-B300
+                - NVIDIA-GB200
+                - NVIDIA-GB300
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "16Gi"
+  limits:
+    cpu: "8"
+    memory: "32Gi"
+
+shmSizeLimit: "8Gi"
+
+# ==============================================================================
+# 三層儲存分離（階段式開關）
+# ==============================================================================
+storage:
+  personalPvc:
+    enabled: true
+    storageClassName: "local-path"
+    size: "100Gi"
+    mountPath: "/home/ubuntu"
+    keepOnDelete: true
+  sharedIsaacPvc:
+    enabled: false
+    existingClaim: "isaac-sim-6-2-shared-ro-pvc"
+    mountPath: "/opt/isaac-sim"
+  # 純內網離線資產 PVC（選配，避免 Isaac Sim 連外抓取 AWS S3 資產）
+  sharedIsaacAssetsPvc:
+    enabled: false
+    existingClaim: "isaac-sim-6-2-assets-ro-pvc"
+    mountPath: "/opt/isaac-sim-assets"
+
+# ==============================================================================
+# 無特權 Rootless Podman
+# ==============================================================================
+podman:
+  enabled: false
+  mountTun: true
+  storage:
+    storageClassName: "local-path"
+    size: "80Gi"
+    mountPath: "/home/ubuntu/.local/share/containers"
+    keepOnDelete: true
+  env:
+    - name: BUILDAH_ISOLATION
+      value: "chroot"
+
+# ==============================================================================
+# 安全基線：非 Root (UID 1000)、零 privileged、零 hostNetwork、容器內不卡權限
+# ==============================================================================
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: "OnRootMismatch"
+  # Rootless Podman 呼叫 clone(CLONE_NEWUSER) 必須放行 seccomp（避免 cannot clone: Operation not permitted）
+  seccompProfile:
+    type: Unconfined
+
+containerSecurityContext:
+  privileged: false
+  allowPrivilegeEscalation: true
+  capabilities:
+    add:
+      - SETUID
+      - SETGID
+    drop:
+      - SYS_ADMIN

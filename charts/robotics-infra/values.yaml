@@ -1,0 +1,113 @@
+# ==============================================================================
+# robotics-infra Helm Chart（基礎設施層：由維運部署／升級一次）
+# 日常新增或調整開發者請改用純 kubectl apply：
+#   kubectl apply -k k8s/users/dio
+#   kubectl apply -k k8s/users
+# ==============================================================================
+
+# 1. 純內網離線共用 RTC ConfigMap（所有使用者 Pod 共用，徹底禁止接觸 stun.l.google.com）
+airGapRtcConfig:
+  enabled: true
+  name: "selkies-airgap-rtc-config"
+
+# 2. 生產環境租戶隔離 NetworkPolicy（需 CNI 支援，如 Calico / Cilium）
+networkPolicy:
+  enabled: true
+  # Ingress-NGINX 所在 Namespace 標籤（放行 8080 Web/Signaling 與 2223 SSH-WS）
+  ingressNamespaceSelector:
+    kubernetes.io/metadata.name: ingress-nginx
+  # 允許辦公內網客戶端直連 WebRTC UDP Mux 埠段（mode=webrtc-udp-mux 時生效）
+  allowWebrtcUdpMux: true
+  webrtcUdpPortStart: 50000
+  webrtcUdpPortEnd: 51000
+  clientCidrs:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+  # 允許 Pod 存取 Ingress-NGINX（供跨 Pod ros-bridge connect wss://<user>.selkies.local/zenoh 走 DNAT 443/8443）
+  allowEgressToIngress: true
+  # 允許 Pod 主動存取的內網資源（例如私有 Registry、Git、PyPI 鏡像），同時阻斷跨使用者 Pod 橫向互連
+  podCidr: "10.244.0.0/16"
+  allowedEgressCidrs:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+  # 永遠封鎖雲端/本機 Metadata IP
+  blockedEgressCidrs:
+    - "169.254.169.254/32"
+
+# 3. 命名空間資源防呆 LimitRange（避免單一使用者 YAML 寫錯吃爆整台節點）
+limitRange:
+  enabled: true
+  maxCpu: "32"
+  maxMemory: "128Gi"
+  defaultRequestCpu: "2"
+  defaultRequestMemory: "8Gi"
+  defaultLimitCpu: "8"
+  defaultLimitMemory: "32Gi"
+
+# 4. 選配：共用 Coturn UDP 中繼（僅隔離私網無法使用 webrtc-udp-mux 時改為 enabled: true）
+coturn:
+  enabled: false
+  image:
+    repository: "registry.local/robotics/coturn"
+    tag: "4.6.2-alpine-patched"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  nodeSelector:
+    kubernetes.io/hostname: "edge-node-01"
+  tolerations: []
+  externalIp: "192.168.10.50"
+  realm: "selkies.local"
+  listeningPort: 3478
+  minPort: 50000
+  maxPort: 51000
+  podCidr: "10.244.0.0-10.244.255.255"
+  noTcpRelay: false
+  # 生產建議預建 Secret 填入 existingSecretName，勿把明碼提交進 Git
+  existingSecretName: ""
+  sharedSecret: "ReplaceWithA64CharRandomSecretForCoturnHMACAuthDoNotUseDefault12"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+
+# 5. 選配：跨 Pod / 跨實體機器人共用 Zenoh Hub（免使用者查詢 K8s Service）
+#    - 僅部署於純 CPU 節點（預設明確排除所有 GPU 節點，絕不佔用 H200/H100/A100/B300/PRO6000）
+#    - 內部提供 ClusterIP:7447（供 Pod 透過環境變數自動高速連線），對外複用單一 Ingress 443 (/zenoh)
+rosZenohHub:
+  enabled: false
+  image:
+    repository: "registry.local/robotics/robot-infra"
+    tag: "v3"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  tcpPort: 7447
+  wsPort: 7448
+  # 強制排除所有 GPU 節點（nvidia.com/gpu.present DoesNotExist），絕不碰觸任何訓練卡節點
+  excludeGpuNodes: true
+  nodeSelector: {}
+  tolerations: []
+  ingress:
+    # 預設關閉對外 Ingress（僅限同叢集內部 ClusterIP 高速存取）；若需外部實體機連入請設 true 並搭配 authSecretName / whitelistSourceRange
+    enabled: false
+    className: "nginx"
+    host: "zenoh.selkies.local"
+    path: "/zenoh"
+    # 選配：Ingress-NGINX htpasswd Basic Auth Secret 名稱（kubectl create secret generic zenoh-hub-auth --from-file=auth）
+    authSecretName: ""
+    # 選配：僅允許指定內網網段連入（例如 "10.0.0.0/8,192.168.0.0/16"）
+    whitelistSourceRange: ""
+    tls:
+      enabled: true
+      secretName: "selkies-wildcard-tls"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "2"
+      memory: "1Gi"

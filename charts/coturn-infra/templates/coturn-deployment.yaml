@@ -1,0 +1,59 @@
+{{- $secretName := .Values.existingSecretName | default (printf "%s-turn-secret" (include "coturn-infra.fullname" .)) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "coturn-infra.fullname" . }}
+  labels:
+    {{- include "coturn-infra.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: coturn
+  template:
+    metadata:
+      labels:
+        {{- include "coturn-infra.labels" . | nindent 8 }}
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: coturn
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: TURN_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: TURN_SHARED_SECRET
+          args:
+            - "-c"
+            - "/etc/coturn/turnserver.conf"
+            - "--static-auth-secret=$(TURN_SHARED_SECRET)"
+          volumeMounts:
+            - name: coturn-config
+              mountPath: /etc/coturn/turnserver.conf
+              subPath: turnserver.conf
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: coturn-config
+          configMap:
+            name: {{ include "coturn-infra.fullname" . }}-config

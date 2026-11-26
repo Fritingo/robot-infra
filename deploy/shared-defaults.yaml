@@ -1,0 +1,136 @@
+# ==============================================================================
+# 全員共用預設值（純內網無外網 + 單一 Ingress IP 受限 + 多人最低延遲）
+# ==============================================================================
+
+image:
+  # 請替換為你們內網私有 Registry（例如 harbor.internal/robotics/robot-infra）
+  repository: "registry.local/robotics/robot-infra"
+  tag: "v3"
+  pullPolicy: IfNotPresent
+  # 若內網 Registry 需要認證，於 robotics Namespace 建立 docker-registry Secret 後填入：
+  pullSecrets: []
+
+selkies:
+  webPort: 8080
+  encoder: "h264enc,h265enc,vp9enc,av1enc,h264enc-striped,jpeg"
+  framerate: "60"
+  videoBitrate: "12000"
+  audioBitrate: ""
+  enableResize: "true"
+  enableBasicAuth: "true"
+  enableHttps: "false"
+  webrtcPacer: "true"
+
+# ------------------------------------------------------------------------------
+# 多人最低延遲 + 零額外 IP + 純內網無外網設定
+#   - 預設 webrtc-udp-mux：每位使用者只佔 1 個 UDP hostPort（50001..50050），
+#     由 Downward API (status.hostIP) 自動帶入所在 GPU 節點 IP，零中繼跳數、水平分散流量，
+#     並透過空 iceServers JSON 徹底禁止存取 stun.l.google.com。
+#   - 若 GPU 節點位於隔離私網無法被電腦直達 UDP：
+#       1) 有單一邊界節點可開 UDP -> 改 mode: "webrtc-coturn" 並部署 charts/coturn-infra
+#       2) 全網只允許單一 Ingress TCP 443 -> 改 mode: "websockets"（零 UDP、零 Coturn）
+# ------------------------------------------------------------------------------
+transport:
+  mode: "webrtc-udp-mux"
+  enableDualMode: true
+  airGappedNoExternalStun: true
+  # 僅在 mode: "webrtc-coturn" 時使用
+  coturn:
+    host: "192.168.10.50"
+    port: "3478"
+    protocol: "udp"
+    tls: "false"
+    existingSecretName: "coturn-infra-turn-secret"
+    existingSecretKey: "TURN_SHARED_SECRET"
+
+# ------------------------------------------------------------------------------
+# 單一 Ingress IP 分流 Web + SSH（0 NodePort、0 獨立 LoadBalancer IP）
+#   - routingMode: "subdomain"（需內網 DNS *.selkies.local 或本機 hosts 指到單一 Ingress IP）
+#       Web: https://<user>.selkies.local/
+#       SSH: wss://<user>.selkies.local/ssh
+#   - routingMode: "subfolder"（完全不需 Wildcard DNS，只需 1 個域名或單一 Ingress IP）
+#       Web: https://selkies.local/<user>/
+#       SSH: wss://selkies.local/<user>/ssh
+# ------------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: "nginx"
+  routingMode: "subdomain"
+  baseDomain: "selkies.local"
+  host: "selkies.local"
+  tls:
+    enabled: true
+    secretName: "selkies-wildcard-tls"
+
+ssh:
+  enabled: true
+  mode: "ingress-ws"
+  sshdPort: 2222
+  wsBridgePort: 2223
+  ingressPath: "/ssh"
+
+gpu:
+  enabled: true
+  resourceName: "nvidia.com/mig-1g.24gb.gfx"
+  count: 1
+  nodeSelector:
+    robot-infra/gpu-pool: "rtx-pro-6000"
+    gpu.capability/rtx-gfx: "true"
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "16Gi"
+  limits:
+    cpu: "8"
+    memory: "32Gi"
+
+shmSizeLimit: "8Gi"
+
+# 階段式啟用建議：先開 personalPvc -> 再開 sharedIsaacPvc -> 再開 podman
+storage:
+  personalPvc:
+    enabled: true
+    storageClassName: "local-path"
+    size: "100Gi"
+    mountPath: "/home/ubuntu"
+    keepOnDelete: true
+  sharedIsaacPvc:
+    enabled: false
+    existingClaim: "isaac-sim-6-2-shared-ro-pvc"
+    mountPath: "/opt/isaac-sim"
+  sharedIsaacAssetsPvc:
+    enabled: false
+    existingClaim: "isaac-sim-6-2-assets-ro-pvc"
+    mountPath: "/opt/isaac-sim-assets"
+
+podman:
+  enabled: false
+  mountTun: true
+  storage:
+    storageClassName: "local-path"
+    size: "80Gi"
+    mountPath: "/home/ubuntu/.local/share/containers"
+    keepOnDelete: true
+  env:
+    - name: BUILDAH_ISOLATION
+      value: "chroot"
+
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: "OnRootMismatch"
+  # Rootless Podman 呼叫 clone(CLONE_NEWUSER) 必須放行 seccomp（避免 cannot clone: Operation not permitted）
+  seccompProfile:
+    type: Unconfined
+
+containerSecurityContext:
+  privileged: false
+  allowPrivilegeEscalation: true
+  capabilities:
+    add:
+      - SETUID
+      - SETGID
+    drop:
+      - SYS_ADMIN

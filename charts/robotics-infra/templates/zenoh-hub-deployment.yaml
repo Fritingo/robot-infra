@@ -1,0 +1,167 @@
+{{- if and .Values.rosZenohHub .Values.rosZenohHub.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-zenoh-hub
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zenoh-hub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: zenoh-hub
+  template:
+    metadata:
+      labels:
+        {{- include "robotics-infra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: zenoh-hub
+    spec:
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      {{- with .Values.rosZenohHub.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.rosZenohHub.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.rosZenohHub.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.rosZenohHub.excludeGpuNodes }}
+      # 強制排除所有 GPU 節點（絕不佔用 H200 / H100 / A100 / B300 / PRO 6000）
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: DoesNotExist
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: zenoh-router
+          image: "{{ .Values.rosZenohHub.image.repository }}:{{ .Values.rosZenohHub.image.tag }}"
+          imagePullPolicy: {{ .Values.rosZenohHub.image.pullPolicy }}
+          command:
+            - /usr/local/bin/zenoh-bridge-ros2dds
+            - --no-multicast-scouting
+            - -l
+            - "tcp/0.0.0.0:{{ .Values.rosZenohHub.tcpPort | default 7447 }}"
+            - router
+          ports:
+            - name: zenoh-tcp
+              containerPort: {{ .Values.rosZenohHub.tcpPort | default 7447 }}
+              protocol: TCP
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.rosZenohHub.resources | nindent 12 }}
+        - name: zenoh-ws
+          image: "{{ .Values.rosZenohHub.image.repository }}:{{ .Values.rosZenohHub.image.tag }}"
+          imagePullPolicy: {{ .Values.rosZenohHub.image.pullPolicy }}
+          command:
+            - /usr/local/bin/websocat
+            - --binary
+            - --exit-on-eof
+            - "ws-l:0.0.0.0:{{ .Values.rosZenohHub.wsPort | default 7448 }}"
+            - "tcp:127.0.0.1:{{ .Values.rosZenohHub.tcpPort | default 7447 }}"
+          ports:
+            - name: zenoh-ws
+              containerPort: {{ .Values.rosZenohHub.wsPort | default 7448 }}
+              protocol: TCP
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-zenoh-hub
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zenoh-hub
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: zenoh-hub
+  ports:
+    - name: zenoh-tcp
+      port: {{ .Values.rosZenohHub.tcpPort | default 7447 }}
+      targetPort: zenoh-tcp
+      protocol: TCP
+    - name: zenoh-ws
+      port: {{ .Values.rosZenohHub.wsPort | default 7448 }}
+      targetPort: zenoh-ws
+      protocol: TCP
+{{- if .Values.rosZenohHub.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-zenoh-hub-ingress
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zenoh-hub
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    {{- if .Values.rosZenohHub.ingress.authSecretName }}
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.rosZenohHub.ingress.authSecretName | quote }}
+    nginx.ingress.kubernetes.io/auth-realm: "Zenoh ROS2 Bridge Authentication Required"
+    {{- end }}
+    {{- if .Values.rosZenohHub.ingress.whitelistSourceRange }}
+    nginx.ingress.kubernetes.io/whitelist-source-range: {{ .Values.rosZenohHub.ingress.whitelistSourceRange | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.rosZenohHub.ingress.className | quote }}
+  {{- if .Values.rosZenohHub.ingress.tls.enabled }}
+  tls:
+    - secretName: {{ .Values.rosZenohHub.ingress.tls.secretName | quote }}
+      hosts:
+        - {{ .Values.rosZenohHub.ingress.host | quote }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.rosZenohHub.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.rosZenohHub.ingress.path | default "/zenoh" | quote }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "robotics-infra.fullname" . }}-zenoh-hub
+                port:
+                  number: {{ .Values.rosZenohHub.wsPort | default 7448 }}
+{{- end }}
+{{- end }}

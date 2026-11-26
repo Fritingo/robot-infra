@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# 供 OPA Gatekeeper 禁止應用程式 Namespace 掛載 hostPath (/dev/net/tun) 的 Linux K8s 叢集使用：
+# 1. 移除 hostPath /dev/net/tun volume 與 volumeMount
+# 2. 改由部署於 kube-system 的 smarter-device-manager（僅鎖定 PRO 6000 節點）配發 smarter-devices/net_tun
+patches:
+  - target:
+      kind: Deployment
+      name: selkies
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/4
+      - op: remove
+        path: /spec/template/spec/volumes/4
+  - path: patch.yaml

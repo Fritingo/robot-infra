@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: selkies-svc
+  labels:
+    app.kubernetes.io/component: selkies
+spec:
+  # 純 ClusterIP，零 NodePort / 零 LoadBalancer IP
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: selkies
+  ports:
+    - name: http-web
+      port: 80
+      targetPort: http-web
+      protocol: TCP
+    - name: ssh-ws
+      port: 2223
+      targetPort: ssh-ws
+      protocol: TCP
+    - name: ssh-tcp
+      port: 2222
+      targetPort: ssh-tcp
+      protocol: TCP
+    - name: zenoh-ws
+      port: 7448
+      targetPort: zenoh-ws
+      protocol: TCP

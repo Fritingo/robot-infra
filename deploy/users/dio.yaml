@@ -1,0 +1,43 @@
+# ==============================================================================
+# 使用者設定：dio（RTX PRO 6000 2g.48gb+gfx 主力 Isaac Sim 6.2 光追開發）
+# 部署指令：
+#   helm upgrade --install selkies-dio ./charts/selkies-user -n robotics \
+#     -f deploy/shared-defaults.yaml -f deploy/users/dio.yaml
+# ==============================================================================
+
+user:
+  name: "dio"
+  enabled: true
+  rosDomainId: "11"
+  auth:
+    # 實務建議透過 --set user.auth.webPassword=... 或預建 existingSecretName 注入
+    webUsername: "dio"
+    webPassword: "DioWebStrongPassword!2026"
+    linuxPassword: "DioLinuxStrongPassword!2026"
+
+# 全域唯一 UDP Mux 埠（50001..50050，每人固定 1 埠，不佔額外 IP）
+transport:
+  udpMuxPort: 50001
+
+gpu:
+  enabled: true
+  # 請依 kubectl describe node 實際 Allocatable 名稱填寫（新版為 .gfx，舊版可能為 nvidia.com/mig-2g.48gb）
+  resourceName: "nvidia.com/mig-2g.48gb.gfx"
+  count: 1
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "16Gi"
+  limits:
+    cpu: "12"
+    memory: "48Gi"
+
+storage:
+  personalPvc:
+    size: "200Gi"
+
+podman:
+  enabled: true
+  storage:
+    size: "150Gi"

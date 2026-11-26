@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selkies
+spec:
+  template:
+    spec:
+      containers:
+        - name: selkies-desktop
+          env:
+            - name: SELKIES_BASIC_AUTH_USER
+              value: "alice"
+            - name: SELKIES_WEBRTC_UDP_MUX_PORT
+              value: "50002"
+            - name: ROS_DOMAIN_ID
+              value: "12"

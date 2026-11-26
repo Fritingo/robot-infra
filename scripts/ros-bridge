@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# ros-bridge: 跨 Pod / 跨實體機器人 CycloneDDS <-> Zenoh (Ingress WSS) 橋接工具
+#
+# 免查詢 K8s Service / Pod IP，直接沿用單一 Ingress TCP 443（wss://<user>.selkies.local/zenoh）
+#
+# 用法：
+#   ros-bridge serve   [--allow REGEX] [--namespace NS] [--domain ID] [--port 7447]
+#       在本機 127.0.0.1:7447 啟動 zenoh-bridge-ros2dds 路由器，
+#       自動透過容器內 websocat (:7448) 與 Ingress wss://<user>.selkies.local/zenoh 對外提供橋接。
+#
+#   ros-bridge connect <wss://host/zenoh | ws://host/zenoh | tcp/host:port> \
+#                      [--allow REGEX] [--namespace NS] [--domain ID] [-k|--insecure]
+#       將本 Pod（含內層 mig-podman）的 CycloneDDS 橋接至另一位使用者的 Pod 或外部機器人。
+#       - 若為 wss:// 或 ws://，自動啟動本機 websocat 隧道再連線 zenoh-bridge-ros2dds。
+#       - 若為 tcp/...，直接連線（適合叢集內高速 ClusterIP zenoh-hub）。
+#
+#   ros-bridge hub     [--allow REGEX] [--namespace NS] [--domain ID] [-k|--insecure]
+#       自動連線至環境變數注入的共用 Hub（優先 ROS_BRIDGE_HUB_ENDPOINT，其次 ROS_BRIDGE_HUB_WSS_URL），
+#       使用者完全不需知道 K8s Service 名稱。
+#
+#   ros-bridge status  檢視目前橋接行程與連線狀態
+#   ros-bridge logs    檢視最近日誌
+#   ros-bridge stop    停止背景橋接與 WebSocket 隧道
+#
+# 環境變數：
+#   ROS_DOMAIN_ID                預設 11（會傳給 zenoh-bridge-ros2dds -d）
+#   ROS_BRIDGE_HUB_ENDPOINT      叢集內高速 Hub 位址（例如 tcp/robotics-infra-zenoh-hub.robotics.svc.cluster.local:7447）
+#   ROS_BRIDGE_HUB_WSS_URL       單一 Ingress 對外 Hub 位址（例如 wss://zenoh.selkies.local/zenoh）
+#   ROS_BRIDGE_INSECURE_TLS=1    允許自簽內網 Wildcard TLS 憑證（等同 -k）
+#   ROS_BRIDGE_LOCAL_TUNNEL_PORT 本機 websocat client 轉發埠（預設 7449）
+# ==============================================================================
+
+STATE_DIR="/tmp/ros-bridge-${USER:-ubuntu}"
+BRIDGE_PID_FILE="${STATE_DIR}/bridge.pid"
+TUNNEL_PID_FILE="${STATE_DIR}/tunnel.pid"
+META_FILE="${STATE_DIR}/meta.env"
+BRIDGE_LOG="${STATE_DIR}/bridge.log"
+TUNNEL_LOG="${STATE_DIR}/tunnel.log"
+
+mkdir -p "${STATE_DIR}"
+
+usage() {
+  sed -n '4,34p' "$0"
+}
+
+is_running() {
+  local pf="$1"
+  [[ -f "$pf" ]] && kill -0 "$(cat "$pf" 2>/dev/null || echo 0)" 2>/dev/null
+}
+
+stop_all() {
+  for pf in "${BRIDGE_PID_FILE}" "${TUNNEL_PID_FILE}"; do
+    if is_running "$pf"; then
+      local pid
+      pid="$(cat "$pf")"
+      kill "$pid" 2>/dev/null || true
+      for _ in $(seq 1 10); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.2
+      done
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pf"
+  done
+  rm -f "${META_FILE}"
+}
+
+ensure_cyclonedds_env() {
+  export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file:///etc/ros/cyclonedds.xml}"
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 0
+fi
+
+CMD="$1"
+shift
+
+case "$CMD" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  stop)
+    stop_all
+    echo "[ros-bridge] 已停止全部橋接行程。"
+    exit 0
+    ;;
+  status)
+    echo "=== ros-bridge 狀態 ==="
+    if [[ -f "${META_FILE}" ]]; then
+      cat "${META_FILE}"
+    fi
+    if is_running "${BRIDGE_PID_FILE}"; then
+      echo "bridge: RUNNING (pid $(cat "${BRIDGE_PID_FILE}"))"
+    else
+      echo "bridge: STOPPED"
+    fi
+    if is_running "${TUNNEL_PID_FILE}"; then
+      echo "tunnel: RUNNING (pid $(cat "${TUNNEL_PID_FILE}"))"
+    else
+      echo "tunnel: STOPPED"
+    fi
+    ss -tln 2>/dev/null | grep -E ':(7447|7448|7449)\b' || true
+    exit 0
+    ;;
+  logs)
+    echo "=== ${BRIDGE_LOG} ==="
+    tail -n 40 "${BRIDGE_LOG}" 2>/dev/null || echo "(尚無日誌)"
+    if [[ -f "${TUNNEL_LOG}" ]]; then
+      echo "=== ${TUNNEL_LOG} ==="
+      tail -n 20 "${TUNNEL_LOG}" 2>/dev/null || true
+    fi
+    exit 0
+    ;;
+  serve|connect|hub)
+    ;;
+  *)
+    echo "[ERROR] 未知子指令: ${CMD}" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+TARGET=""
+if [[ "$CMD" == "connect" ]]; then
+  if [[ $# -eq 0 ]]; then
+    echo "[ERROR] connect 需要指定目標，例如：ros-bridge connect wss://alice.selkies.local/zenoh" >&2
+    exit 1
+  fi
+  TARGET="$1"
+  shift
+fi
+
+DOMAIN="${ROS_DOMAIN_ID:-11}"
+ALLOW_REGEX=""
+NAMESPACE=""
+LISTEN_PORT="7447"
+INSECURE="${ROS_BRIDGE_INSECURE_TLS:-0}"
+AUTH_CREDS="${ROS_BRIDGE_AUTH:-}"
+FOREGROUND=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d|--domain)    DOMAIN="$2"; shift 2 ;;
+    --allow)        ALLOW_REGEX="$2"; shift 2 ;;
+    -n|--namespace) NAMESPACE="$2"; shift 2 ;;
+    -p|--port)      LISTEN_PORT="$2"; shift 2 ;;
+    -u|--auth)      AUTH_CREDS="$2"; shift 2 ;;
+    -k|--insecure)  INSECURE="1"; shift ;;
+    -f|--foreground) FOREGROUND=1; shift ;;
+    -h|--help)      usage; exit 0 ;;
+    *)
+      echo "[ERROR] 不支援的參數: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$CMD" == "hub" ]]; then
+  if [[ -n "${ROS_BRIDGE_HUB_ENDPOINT:-}" ]]; then
+    TARGET="${ROS_BRIDGE_HUB_ENDPOINT}"
+  elif [[ -n "${ROS_BRIDGE_HUB_WSS_URL:-}" ]]; then
+    TARGET="${ROS_BRIDGE_HUB_WSS_URL}"
+  else
+    echo "[ERROR] 未設定 ROS_BRIDGE_HUB_ENDPOINT 或 ROS_BRIDGE_HUB_WSS_URL。" >&2
+    echo "        請確認已啟用 k8s/components/cross-pod-ros，或改用 ros-bridge connect wss://<peer>.selkies.local/zenoh" >&2
+    exit 1
+  fi
+fi
+
+ensure_cyclonedds_env
+stop_all
+
+BRIDGE_ARGS=(-d "${DOMAIN}" --no-multicast-scouting)
+if [[ -n "${NAMESPACE}" ]]; then
+  BRIDGE_ARGS+=(-n "${NAMESPACE}")
+fi
+if [[ -n "${ALLOW_REGEX}" ]]; then
+  CFG_FILE="${STATE_DIR}/bridge.json5"
+  printf '{ plugins: { ros2dds: { allow: { publishers: ["%s"], subscribers: ["%s"], service_servers: ["%s"], service_clients: ["%s"], action_servers: ["%s"], action_clients: ["%s"] } } } }\n' \
+    "${ALLOW_REGEX}" "${ALLOW_REGEX}" "${ALLOW_REGEX}" "${ALLOW_REGEX}" "${ALLOW_REGEX}" "${ALLOW_REGEX}" > "${CFG_FILE}"
+  BRIDGE_ARGS+=(-c "${CFG_FILE}")
+fi
+
+if [[ "$CMD" == "serve" ]]; then
+  BRIDGE_ARGS+=(-l "tcp/127.0.0.1:${LISTEN_PORT}" router)
+  printf 'MODE=serve\nDOMAIN=%s\nLISTEN=tcp/127.0.0.1:%s\nALLOW=%s\nNAMESPACE=%s\n' \
+    "${DOMAIN}" "${LISTEN_PORT}" "${ALLOW_REGEX}" "${NAMESPACE}" > "${META_FILE}"
+
+  if [[ "${FOREGROUND}" == "1" ]]; then
+    exec /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}"
+  fi
+
+  nohup /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}" >"${BRIDGE_LOG}" 2>&1 </dev/null &
+  echo $! > "${BRIDGE_PID_FILE}"
+  sleep 1
+  if ! is_running "${BRIDGE_PID_FILE}"; then
+    echo "[ERROR] zenoh-bridge-ros2dds 啟動失敗：" >&2
+    cat "${BRIDGE_LOG}" >&2
+    exit 1
+  fi
+  echo "[ros-bridge] 已啟動 serve 模式（ROS_DOMAIN_ID=${DOMAIN}, listen=127.0.0.1:${LISTEN_PORT}）。"
+  echo "             其他 Pod / 外部主機可經由 Ingress 連線：ros-bridge connect wss://<你的網域>/zenoh"
+  exit 0
+fi
+
+# connect / hub 模式
+ZENOH_ENDPOINT="${TARGET}"
+if [[ "${TARGET}" == wss://* || "${TARGET}" == ws://* ]]; then
+  TUNNEL_PORT="${ROS_BRIDGE_LOCAL_TUNNEL_PORT:-7449}"
+  WS_ARGS=(--binary --exit-on-eof)
+  if [[ "${INSECURE}" == "1" ]]; then
+    WS_ARGS+=(-k)
+  fi
+  if [[ -n "${AUTH_CREDS}" ]]; then
+    AUTH_B64="$(printf '%s' "${AUTH_CREDS}" | base64 -w0)"
+    WS_ARGS+=(-H "Authorization: Basic ${AUTH_B64}")
+  fi
+  nohup /usr/local/bin/websocat "${WS_ARGS[@]}" "tcp-l:127.0.0.1:${TUNNEL_PORT}" "${TARGET}" >"${TUNNEL_LOG}" 2>&1 </dev/null &
+  echo $! > "${TUNNEL_PID_FILE}"
+  sleep 0.5
+  if ! is_running "${TUNNEL_PID_FILE}"; then
+    echo "[ERROR] websocat 隧道啟動失敗：" >&2
+    cat "${TUNNEL_LOG}" >&2
+    exit 1
+  fi
+  ZENOH_ENDPOINT="tcp/127.0.0.1:${TUNNEL_PORT}"
+fi
+
+BRIDGE_ARGS+=(-e "${ZENOH_ENDPOINT}" client)
+printf 'MODE=%s\nDOMAIN=%s\nTARGET=%s\nENDPOINT=%s\nALLOW=%s\nNAMESPACE=%s\n' \
+  "${CMD}" "${DOMAIN}" "${TARGET}" "${ZENOH_ENDPOINT}" "${ALLOW_REGEX}" "${NAMESPACE}" > "${META_FILE}"
+
+if [[ "${FOREGROUND}" == "1" ]]; then
+  exec /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}"
+fi
+
+nohup /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}" >"${BRIDGE_LOG}" 2>&1 </dev/null &
+echo $! > "${BRIDGE_PID_FILE}"
+sleep 1.5
+if ! is_running "${BRIDGE_PID_FILE}"; then
+  echo "[ERROR] zenoh-bridge-ros2dds 連線失敗：" >&2
+  cat "${BRIDGE_LOG}" >&2
+  stop_all
+  exit 1
+fi
+echo "[ros-bridge] 已連線至 ${TARGET}（本地 CycloneDDS ROS_DOMAIN_ID=${DOMAIN} 已開始跨 Pod 橋接）。"
+echo "             使用 ros-bridge status / logs / stop 檢視或停止。"

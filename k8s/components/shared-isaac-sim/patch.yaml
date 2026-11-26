@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selkies
+spec:
+  template:
+    spec:
+      containers:
+        - name: selkies-desktop
+          env:
+            - name: ISAAC_SIM_RO_DIR
+              value: "/opt/isaac-sim"
+            - name: ISAAC_ASSETS_RO_DIR
+              value: "/opt/isaac-sim-assets"
+          volumeMounts:
+            - name: shared-isaac-sim
+              mountPath: /opt/isaac-sim
+              readOnly: true
+            - name: shared-isaac-assets
+              mountPath: /opt/isaac-sim-assets
+              readOnly: true
+      volumes:
+        - name: shared-isaac-sim
+          persistentVolumeClaim:
+            claimName: isaac-sim-6-2-shared-ro-pvc
+            readOnly: true
+        - name: shared-isaac-assets
+          persistentVolumeClaim:
+            claimName: isaac-sim-6-2-assets-ro-pvc
+            readOnly: true

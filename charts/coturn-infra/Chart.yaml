@@ -1,0 +1,6 @@
+apiVersion: v2
+name: coturn-infra
+description: Optional shared internal Coturn UDP relay for air-gapped Kubernetes clusters where GPU worker nodes are unreachable directly from clients
+type: application
+version: 1.0.0
+appVersion: "4.6.2"

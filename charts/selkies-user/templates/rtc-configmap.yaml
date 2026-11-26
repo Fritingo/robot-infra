@@ -1,0 +1,17 @@
+{{- if and .Values.user.enabled (eq .Values.transport.mode "webrtc-udp-mux") .Values.transport.airGappedNoExternalStun }}
+# 純內網離線專用：明確給予空的 iceServers，防止 Selkies v2.2.1 回退至 stun.l.google.com / stun.cloudflare.com
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "selkies-user.name" . }}-rtc-config
+  labels:
+    {{- include "selkies-user.labels" . | nindent 4 }}
+data:
+  rtc-config.json: |
+    {
+      "lifetimeDuration": "86400s",
+      "iceServers": [],
+      "blockStatus": "NOT_BLOCKED",
+      "iceTransportPolicy": "all"
+    }
+{{- end }}

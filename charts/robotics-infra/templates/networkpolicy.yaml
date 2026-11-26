@@ -1,0 +1,114 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-selkies-isolation
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: selkies
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 1. 僅放行 Ingress-NGINX 進入 Selkies Web (8080)、SSH-WS (2223) 與跨 Pod ROS Zenoh-WS (7448)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 2223
+        - protocol: TCP
+          port: 7448
+    {{- if .Values.networkPolicy.allowWebrtcUdpMux }}
+    # 2. 放行內網辦公網段直連 WebRTC UDP Mux 媒體埠段（50000-51000）
+    - from:
+        {{- range .Values.networkPolicy.clientCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: UDP
+          port: {{ .Values.networkPolicy.webrtcUdpPortStart }}
+          endPort: {{ .Values.networkPolicy.webrtcUdpPortEnd }}
+    {{- end }}
+    {{- if .Values.coturn.enabled }}
+    # 3. 若啟用 Coturn，放行 Coturn 轉發 UDP 至 Selkies Pod
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: coturn
+      ports:
+        - protocol: UDP
+          port: {{ .Values.coturn.minPort }}
+          endPort: {{ .Values.coturn.maxPort }}
+    {{- end }}
+  egress:
+    # 1. 允許查詢叢集內部 CoreDNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if .Values.coturn.enabled }}
+    # 2. 若啟用 Coturn，允許連向 Coturn (3478 + 中繼埠段)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: coturn
+      ports:
+        - protocol: UDP
+          port: {{ .Values.coturn.listeningPort }}
+        - protocol: TCP
+          port: {{ .Values.coturn.listeningPort }}
+        - protocol: UDP
+          port: {{ .Values.coturn.minPort }}
+          endPort: {{ .Values.coturn.maxPort }}
+    {{- end }}
+    {{- if and .Values.rosZenohHub .Values.rosZenohHub.enabled }}
+    # 2.5 若啟用跨 Pod ROS Zenoh Hub，僅放行連向同 Namespace 內的 zenoh-hub TCP 7447（仍維持跨使用者 Pod 橫向封鎖）
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: zenoh-hub
+      ports:
+        - protocol: TCP
+          port: {{ .Values.rosZenohHub.tcpPort | default 7447 }}
+    {{- end }}
+    {{- if ne .Values.networkPolicy.allowEgressToIngress false }}
+    # 2.6 允許存取 Ingress-NGINX（Calico/Cilium 於 DNAT 後檢查 Egress，放行此規則才能跨 Pod 存取 wss://<user>.selkies.local/zenoh）
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8443
+        - protocol: TCP
+          port: 80
+    {{- end }}
+    # 3. 允許連線至內網 Registry / Git / 客戶端網段，但明確排除 Pod CIDR（阻斷租戶 Pod 橫向互連）與 Metadata IP
+    - to:
+        {{- range .Values.networkPolicy.allowedEgressCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+            except:
+              {{- if $.Values.networkPolicy.podCidr }}
+              - {{ $.Values.networkPolicy.podCidr | quote }}
+              {{- end }}
+              {{- range $.Values.networkPolicy.blockedEgressCidrs }}
+              - {{ . | quote }}
+              {{- end }}
+        {{- end }}
+{{- end }}

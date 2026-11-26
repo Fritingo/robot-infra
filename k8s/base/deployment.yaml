@@ -1,0 +1,202 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selkies
+  labels:
+    app.kubernetes.io/component: selkies
+spec:
+  replicas: 1
+  # 搭配 RWO PVC、MIG 與 UDP hostPort 必須使用 Recreate，避免新舊 Pod 爭搶掛載與埠位
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: selkies
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: selkies
+    spec:
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      # 三重硬體排程鎖定：確保 Pod 絕對只排程至 RTX PRO 6000 Blackwell 節點，絕不碰觸 H200 / H100 / A100 / B300
+      nodeSelector:
+        robot-infra/gpu-pool: "rtx-pro-6000"
+        gpu.capability/rtx-gfx: "true"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: robot-infra/gpu-pool
+                    operator: In
+                    values:
+                      - rtx-pro-6000
+                  - key: nvidia.com/gpu.product
+                    operator: NotIn
+                    values:
+                      - NVIDIA-A100-SXM4-40GB
+                      - NVIDIA-A100-SXM4-80GB
+                      - NVIDIA-A100-PCIE-40GB
+                      - NVIDIA-A100-80GB-PCIe
+                      - NVIDIA-H100-80GB-HBM3
+                      - NVIDIA-H100-PCIe
+                      - NVIDIA-H100-NVL
+                      - NVIDIA-H200
+                      - NVIDIA-H200-SXM5-141GB
+                      - NVIDIA-H200-NVL
+                      - NVIDIA-B200
+                      - NVIDIA-B300
+                      - NVIDIA-GB200
+                      - NVIDIA-GB300
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+        # Rootless Podman 呼叫 clone(CLONE_NEWUSER) 必備；生產建議啟用 components/seccomp-podman-localhost
+        seccompProfile:
+          type: Unconfined
+      containers:
+        - name: selkies-desktop
+          image: registry.local/robotics/robot-infra:v3
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: true
+            capabilities:
+              # 生產最小權限白名單：先 drop ALL，僅加回 sudo / Rootless sshd 密碼驗證所需 6 項能力
+              drop:
+                - ALL
+              add:
+                - SETUID
+                - SETGID
+                - CHOWN
+                - FOWNER
+                - DAC_OVERRIDE
+                - AUDIT_WRITE
+          ports:
+            - name: http-web
+              containerPort: 8080
+              protocol: TCP
+            - name: ssh-ws
+              containerPort: 2223
+              protocol: TCP
+            - name: ssh-tcp
+              containerPort: 2222
+              protocol: TCP
+            - name: webrtc-udp
+              containerPort: 50001
+              hostPort: 50001
+              protocol: UDP
+            - name: zenoh-ws
+              containerPort: 7448
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: http-web
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http-web
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          env:
+            - name: TZ
+              value: "Asia/Taipei"
+            - name: SELKIES_PORT
+              value: "8080"
+            - name: SELKIES_ENABLE_HTTPS
+              value: "false"
+            - name: SELKIES_ENABLE_BASIC_AUTH
+              value: "true"
+            - name: SELKIES_BASIC_AUTH_USER
+              value: "ubuntu"
+            - name: SELKIES_BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: selkies-auth
+                  key: WEB_PASSWORD
+            - name: PASSWD
+              valueFrom:
+                secretKeyRef:
+                  name: selkies-auth
+                  key: LINUX_PASSWORD
+            # Selkies v2.2.1 (pixelflux)：首項 h264enc 為預設並自動啟用 NVENC，完整清單保留網頁 UI 切換權限
+            - name: SELKIES_ENCODER
+              value: "h264enc,h265enc,vp9enc,av1enc,h264enc-striped,jpeg"
+            - name: SELKIES_FRAMERATE
+              value: "60"
+            - name: SELKIES_VIDEO_BITRATE
+              value: "12000"
+            - name: SELKIES_ENABLE_RESIZE
+              value: "true"
+            - name: SELKIES_WEBRTC_PACER
+              value: "true"
+            # 預設：純內網多人最低延遲 webrtc-udp-mux（0 中繼跳數、0 額外 IP、0 外網 STUN）
+            - name: SELKIES_MODE
+              value: "webrtc"
+            - name: SELKIES_ENABLE_DUAL_MODE
+              value: "true"
+            - name: SELKIES_WEBRTC_ICE_LITE
+              value: "true"
+            - name: SELKIES_WEBRTC_UDP_MUX_PORT
+              value: "50001"
+            - name: SELKIES_WEBRTC_PUBLIC_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: SELKIES_RTC_CONFIG_JSON
+              value: "/etc/selkies/rtc-config.json"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "all"
+            - name: ROS_DOMAIN_ID
+              value: "11"
+            - name: RMW_IMPLEMENTATION
+              value: "rmw_cyclonedds_cpp"
+            - name: CYCLONEDDS_URI
+              value: "file:///etc/ros/cyclonedds.xml"
+            - name: BUILDAH_ISOLATION
+              value: "chroot"
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+              nvidia.com/mig-1g.24gb.gfx: 1
+            limits:
+              cpu: "8"
+              memory: "32Gi"
+              nvidia.com/mig-1g.24gb.gfx: 1
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: rtc-config
+              mountPath: /etc/selkies/rtc-config.json
+              subPath: rtc-config.json
+              readOnly: true
+            - name: personal-data
+              mountPath: /home/ubuntu
+            - name: podman-storage
+              mountPath: /home/ubuntu/.local/share/containers
+            - name: dev-net-tun
+              mountPath: /dev/net/tun
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: rtc-config
+          configMap:
+            name: selkies-airgap-rtc-config
+        - name: personal-data
+          persistentVolumeClaim:
+            claimName: selkies-pvc
+        - name: podman-storage
+          persistentVolumeClaim:
+            claimName: selkies-podman-pvc
+        - name: dev-net-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice

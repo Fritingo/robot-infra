@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# 生產環境推薦：以自訂 Seccomp 取代 Unconfined（只放行 Rootless Podman 必要 syscall，封鎖 bpf/io_uring/ptrace/kexec/keyctl 等高危呼叫）
+# 前置作業：將 charts/robotics-infra/files/podman-rootless-seccomp.json 複製到所有 GPU 節點的
+#          /var/lib/kubelet/seccomp/profiles/podman-rootless.json
+patches:
+  - path: patch.yaml

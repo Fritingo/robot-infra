@@ -1,0 +1,22 @@
+# ==============================================================================
+# 使用者設定：alice（RTX PRO 6000 1g.24gb+gfx，ROS 2 Jazzy + MoveIt 2 + 輕中度模擬）
+# 僅需填寫與 deploy/shared-defaults.yaml 不同的差異欄位
+# ==============================================================================
+
+user:
+  name: "alice"
+  enabled: true
+  rosDomainId: "12"
+  auth:
+    webUsername: "alice"
+    webPassword: "AliceWebStrongPassword!2026"
+    linuxPassword: "AliceLinuxStrongPassword!2026"
+
+# 全域唯一 UDP Mux 埠（不與 dio 的 50001 重複）
+transport:
+  udpMuxPort: 50002
+
+gpu:
+  enabled: true
+  resourceName: "nvidia.com/mig-1g.24gb.gfx"
+  count: 1

@@ -1,0 +1,63 @@
+{{- if .Values.coturn.enabled }}
+{{- $secretName := .Values.coturn.existingSecretName | default "coturn-infra-turn-secret" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-coturn
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: coturn
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: coturn
+  template:
+    metadata:
+      labels:
+        {{- include "robotics-infra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: coturn
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.coturn.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coturn.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coturn.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: coturn
+          image: "{{ .Values.coturn.image.repository }}:{{ .Values.coturn.image.tag }}"
+          imagePullPolicy: {{ .Values.coturn.image.pullPolicy }}
+          env:
+            - name: TURN_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: TURN_SHARED_SECRET
+          args:
+            - "-c"
+            - "/etc/coturn/turnserver.conf"
+            - "--static-auth-secret=$(TURN_SHARED_SECRET)"
+          volumeMounts:
+            - name: coturn-config
+              mountPath: /etc/coturn/turnserver.conf
+              subPath: turnserver.conf
+              readOnly: true
+          resources:
+            {{- toYaml .Values.coturn.resources | nindent 12 }}
+      volumes:
+        - name: coturn-config
+          configMap:
+            name: {{ include "robotics-infra.fullname" . }}-coturn-config
+{{- end }}

@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 日常批次套用所有使用者（Infra 層 Namespace / ConfigMap / NetworkPolicy 由 Helm charts/robotics-infra 管理）：
+#   kubectl apply -k k8s/users
+resources:
+  - dio
+  - alice
