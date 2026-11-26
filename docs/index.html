@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Robot-Infra v2 — 純內網多使用者 GPU 機器人開發平台完整技術與參數手冊</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --bg-elev: #121931;
+      --bg-card: #161f3d;
+      --bg-code: #0c1224;
+      --border: #25325c;
+      --text: #e6ecff;
+      --text-muted: #98a6cc;
+      --accent: #38bdf8;
+      --accent-2: #818cf8;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --red: #f87171;
+      --purple: #c084fc;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", Roboto, Helvetica, Arial, sans-serif;
+    }
+    [data-theme="light"] {
+      --bg: #f4f7fc;
+      --bg-elev: #ffffff;
+      --bg-card: #ffffff;
+      --bg-code: #0f172a;
+      --border: #dbe3f3;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --accent: #0284c7;
+      --accent-2: #4f46e5;
+      --green: #059669;
+      --amber: #d97706;
+      --red: #dc2626;
+      --purple: #7c3aed;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.66;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 290px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--bg-elev);
+      border-right: 1px solid var(--border);
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: #fff;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .brand-title { font-weight: 700; font-size: 15px; line-height: 1.2; }
+    .brand-sub { font-size: 11.5px; color: var(--text-muted); }
+
+    .search-box {
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .search-box:focus { border-color: var(--accent); }
+
+    .nav-group-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 6px 8px 2px;
+      font-weight: 700;
+    }
+    .nav-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .nav-list a {
+      display: block;
+      padding: 6px 10px;
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      transition: all 0.15s ease;
+    }
+    .nav-list a:hover, .nav-list a.active {
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Main */
+    .main {
+      flex: 1;
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 34px 38px 80px;
+      width: 100%;
+    }
+    .hero {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(129, 140, 248, 0.14));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 30px;
+      box-shadow: var(--shadow);
+      margin-bottom: 28px;
+    }
+    .hero h1 { margin: 0 0 10px; font-size: 27px; line-height: 1.25; }
+    .hero p { margin: 0 0 16px; color: var(--text-muted); font-size: 14.5px; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+    }
+    .badge.ok { border-color: rgba(52, 211, 153, 0.45); color: var(--green); }
+    .badge.info { border-color: rgba(56, 189, 248, 0.45); color: var(--accent); }
+    .badge.warn { border-color: rgba(251, 191, 36, 0.45); color: var(--amber); }
+    .badge.purple { border-color: rgba(192, 132, 252, 0.45); color: var(--purple); }
+
+    section { margin-bottom: 38px; scroll-margin-top: 20px; }
+    section h2 {
+      font-size: 20.5px;
+      margin: 0 0 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    section h3 { font-size: 15.5px; margin: 18px 0 9px; color: var(--accent); }
+    .sec-num {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(56, 189, 248, 0.16);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+    }
+    .card h4 { margin: 0 0 8px; font-size: 15px; }
+    .card p { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+    .metric { font-size: 25px; font-weight: 800; line-height: 1.15; margin: 4px 0; }
+    .metric.green { color: var(--green); }
+    .metric.accent { color: var(--accent); }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+      border-radius: 0 10px 10px 0;
+      padding: 12px 15px;
+      margin: 14px 0;
+      font-size: 13.5px;
+    }
+    .callout.ok { border-color: var(--green); background: rgba(52, 211, 153, 0.09); }
+    .callout.warn { border-color: var(--amber); background: rgba(251, 191, 36, 0.09); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; margin: 12px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--bg-card); }
+    th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: rgba(56, 189, 248, 0.08); font-weight: 700; white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(129, 140, 248, 0.06); }
+
+    code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(129, 140, 248, 0.14);
+      padding: 2px 5px;
+      border-radius: 5px;
+      word-break: break-word;
+    }
+    .code-block {
+      position: relative;
+      background: var(--bg-code);
+      color: #e2e8f0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin: 12px 0;
+      overflow: hidden;
+    }
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 12px;
+      color: #94a3b8;
+      font-family: var(--mono);
+    }
+    .copy-btn {
+      cursor: pointer;
+      background: rgba(56, 189, 248, 0.16);
+      color: #7dd3fc;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 6px;
+      padding: 3px 9px;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+    .copy-btn:hover { background: rgba(56, 189, 248, 0.28); }
+    pre {
+      margin: 0;
+      padding: 13px 15px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 12.2px;
+      line-height: 1.55;
+      color: #e2e8f0;
+    }
+    pre code { background: transparent; padding: 0; color: inherit; word-break: normal; }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+    .tab-btn {
+      cursor: pointer;
+      padding: 7px 13px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-muted);
+      font-size: 12.8px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .param-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .param-filter {
+      flex: 1;
+      min-width: 240px;
+      padding: 9px 13px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .param-filter:focus { border-color: var(--accent); }
+    .param-count { font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+
+    .bar-row { margin: 11px 0; }
+    .bar-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; font-weight: 600; }
+    .bar-track { height: 11px; background: rgba(148, 163, 184, 0.18); border-radius: 999px; overflow: hidden; }
+    .bar-fill { height: 100%; }
+
+    .svg-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      overflow-x: auto;
+      box-shadow: var(--shadow);
+    }
+    .svg-box svg { width: 100%; min-width: 760px; height: auto; display: block; }
+
+    details {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    summary::after { content: "＋"; color: var(--accent); font-weight: 800; }
+    details[open] summary::after { content: "－"; }
+    details .details-body { margin-top: 10px; font-size: 13.5px; color: var(--text-muted); }
+
+    .tree {
+      font-family: var(--mono);
+      font-size: 12.2px;
+      line-height: 1.62;
+      background: var(--bg-code);
+      color: #cbd5e1;
+      padding: 15px 17px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .tree .dir { color: #38bdf8; font-weight: 700; }
+    .tree .star { color: #34d399; font-weight: 700; }
+    .tree .cmt { color: #64748b; }
+
+    .hidden-by-search, .hidden-row { display: none !important; }
+    .pill {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .pill.crit { background: rgba(248, 113, 113, 0.18); color: var(--red); }
+    .pill.high { background: rgba(251, 146, 60, 0.2); color: #fb923c; }
+    .pill.med { background: rgba(251, 191, 36, 0.18); color: var(--amber); }
+    .pill.low { background: rgba(56, 189, 248, 0.18); color: var(--accent); }
+    .pill.ok { background: rgba(52, 211, 153, 0.18); color: var(--green); }
+
+    @media (max-width: 920px) {
+      body { flex-direction: column; }
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+      .main { padding: 20px 16px 60px; }
+    }
+    @media print {
+      .sidebar, .copy-btn, .param-toolbar { display: none !important; }
+      .tab-panel { display: block !important; margin-bottom: 16px; }
+      body { background: #fff; color: #000; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">RI</div>
+      <div>
+        <div class="brand-title">Robot-Infra v2</div>
+        <div class="brand-sub">完整技術架構與參數參考手冊</div>
+      </div>
+    </div>
+
+    <input id="searchInput" class="search-box" type="search" placeholder="全域章節搜尋（如 MIG、Seccomp、CVE）..." />
+
+    <div class="nav-group-label">快速開始與架構</div>
+    <ul class="nav-list">
+      <li><a href="#sec-overview">1. 專案總覽與取得專案包</a></li>
+      <li><a href="#sec-arch">2. 系統架構與網路拓撲</a></li>
+      <li><a href="#sec-transport">3. 三種純內網傳輸模式</a></li>
+      <li><a href="#sec-files">4. 專案目錄結構與檔案分工</a></li>
+    </ul>
+
+    <div class="nav-group-label">完整可控參數字典</div>
+    <ul class="nav-list">
+      <li><a href="#sec-params">5. 全平台可控參數與啟動參數</a></li>
+      <li><a href="#sec-cli">6. 內建 CLI 工具與 supervisord</a></li>
+    </ul>
+
+    <div class="nav-group-label">部署與日常操作</div>
+    <ul class="nav-list">
+      <li><a href="#sec-deploy">7. 完整部署步驟（Docker / Helm / K8s）</a></li>
+      <li><a href="#sec-dev">8. 容器內開發與離線同步</a></li>
+    </ul>
+
+    <div class="nav-group-label">資安與排解</div>
+    <ul class="nav-list">
+      <li><a href="#sec-security">9. 生產安全基線與 Seccomp</a></li>
+      <li><a href="#sec-cve">10. Trivy CVE 掃描修補報告</a></li>
+      <li><a href="#sec-faq">11. 常見問題排解</a></li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <button id="themeToggle" class="btn" style="flex:1">淺色／深色</button>
+      <button onclick="window.print()" class="btn">列印 PDF</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="hero">
+      <h1>Robot-Infra v3 — 純內網多使用者 GPU 機器人開發平台</h1>
+      <p>
+        專為<strong>無外網連線（Air-Gapped）</strong>、<strong>單一 Ingress IP 受限環境</strong>與<strong>多型號 GPU 混部叢集（共存 H200 / H100 / A100 / B300，嚴格僅觸及 RTX PRO 6000）</strong>打造。
+        整合 Selkies v2.2.1 EGL Desktop、ROS 2 Jazzy + MoveIt 2 + <strong>預設 CycloneDDS（lo 直通 Podman/Docker）</strong>、<strong>跨 Pod <code>ros-bridge</code>（Ingress <code>/zenoh</code> WSS + 選配純 CPU Hub）</strong>、無特權 Rootless Podman 與共用唯讀 Isaac Sim 6.2。
+      </p>
+      <div class="badge-row">
+        <span class="badge info">Image: fritingo/robot-infra:v3</span>
+        <span class="badge purple">Bundle: fritingo/robot-infra:v3-bundle</span>
+        <span class="badge ok">PRO 6000 專屬鎖定・零影響 H200/H100/A100/B300</span>
+        <span class="badge ok">預設 CycloneDDS + Ingress /zenoh 跨 Pod 橋接</span>
+        <span class="badge ok">可修補 CRITICAL / HIGH CVE：0</span>
+      </div>
+    </div>
+
+    <!-- 1. Overview & Quick Pull -->
+    <section id="sec-overview" class="searchable">
+      <h2><span class="sec-num">1</span>專案總覽與快速取得專案包</h2>
+      <div class="grid-4">
+        <div class="card">
+          <h4>單一 Ingress IP 分流</h4>
+          <div class="metric accent">1 IP</div>
+          <p>所有開發者共用單一 Ingress-NGINX TCP 443，同時承載 Web 桌面（<code>/</code>）與 SSH 隧道（<code>/ssh</code>），零 NodePort。</p>
+        </div>
+        <div class="card">
+          <h4>多人最低延遲媒體</h4>
+          <div class="metric green">0 Hops</div>
+          <p>預設 <code>webrtc-udp-mux</code> + <code>ICE-lite</code> + Downward API <code>status.hostIP</code>，零中繼跳數、零外網 STUN。</p>
+        </div>
+        <div class="card">
+          <h4>分層部署管理</h4>
+          <div class="metric accent">Helm + K8s</div>
+          <p>基礎設施交由 <code>charts/robotics-infra</code> 管一次；新增開發者直接 <code>kubectl apply -k k8s/users/&lt;user&gt;</code>。</p>
+        </div>
+        <div class="card">
+          <h4>CVE 漏洞清零修補</h4>
+          <div class="metric green">71 → 0</div>
+          <p>可修補 CRITICAL 與實質可修補 HIGH CVE 均已 100% 清零，內建客製 Seccomp 與 6 項最小 Capabilities。</p>
+        </div>
+      </div>
+
+      <h3>從 Docker Hub 拉取專案壓縮包（<code>fritingo/robot-infra:v3-bundle</code>）</h3>
+      <div class="code-block">
+        <div class="code-header"><span>Docker / Podman 取出 robot-infra-v3-bundle.zip 並驗證 SHA256</span><button class="copy-btn">複製</button></div>
+        <pre><code>docker pull fritingo/robot-infra:v3-bundle
+CID=$(docker create fritingo/robot-infra:v3-bundle)
+docker cp "${CID}:/opt/bundle/robot-infra-v3-bundle.zip" ./robot-infra-v3-bundle.zip
+docker cp "${CID}:/opt/bundle/SHA256SUMS" ./SHA256SUMS
+docker rm -f "$CID" >/dev/null
+
+sha256sum -c SHA256SUMS
+unzip robot-infra-v3-bundle.zip -d robot-infra-v3</code></pre>
+      </div>
+
+      <h3>v3 核心架構保證：零宿主機影響・零全叢集異動・僅涉及 RTX PRO 6000</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>隔離面向</th><th>v3 實作機制</th><th>保證結果</th></tr></thead>
+          <tbody>
+            <tr><td><strong>跨 Pod ROS 2（免查 K8s svc）</strong></td><td>Pod 內預設 <code>rmw_cyclonedds_cpp</code> 綁定 <code>lo</code> 直通 <code>mig-podman</code>/Docker；跨 Pod 經單一 Ingress <code>wss://&lt;user&gt;.selkies.local/zenoh</code>（<code>:7448→7447</code>）或純 CPU <code>zenoh-hub</code> + <code>ros-bridge</code> CLI</td><td>零額外 IP、零 DDS multicast 外洩、使用者完全不需 <code>kubectl get svc</code></td></tr>
+            <tr><td><strong>嚴格僅排程 RTX PRO 6000</strong></td><td>三重硬體鎖定：<code>nodeSelector</code>（<code>robot-infra/gpu-pool: rtx-pro-6000</code> + <code>gpu.capability/rtx-gfx: "true"</code>）+ <code>nodeAffinity</code> <code>NotIn</code> 排除全部 <code>A100/H100/H200/B200/B300/GB200/GB300</code> + <code>+gfx</code> MIG 資源；無 CPU 節點時 <code>zenoh-hub</code> 與 <code>coturn</code> 亦集中至 PRO 6000 節點並設 <code>NVIDIA_VISIBLE_DEVICES=void</code>（佔 0 GPU）</td><td><strong>無 CPU 節點亦可直接部署，且絕對不會碰觸 H200 / H100 / A100 / B300 訓練節點</strong></td></tr>
+            <tr><td><strong>非破壞式 MIG 合併</strong></td><td><code>deploy/gpu-operator/apply-pro6000-mig-safe.sh</code> 先驗證節點 GPU 型號（命中 H200/H100/A100/B300 立即中止），再合併叢集既有 <code>default-mig-parted-config</code></td><td>完整保留既有訓練卡的所有 MIG Profile</td></tr>
+            <tr><td><strong>零 Host OS 與全叢集污染</strong></td><td>100% Namespace-scoped（<code>robotics</code>），零 <code>ClusterRole</code>/<code>CRD</code>/<code>Webhook</code>；<code>privileged: false</code>、<code>hostNetwork/PID/IPC: false</code>、6 項最小 Capabilities、客製 Seccomp</td><td>不改動宿主機核心／網路／sysctl，不更動其他 Namespace 或 Ingress Controller 全域旗標</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 2. Architecture -->
+    <section id="sec-arch" class="searchable">
+      <h2><span class="sec-num">2</span>系統架構與網路拓撲</h2>
+      <div class="svg-box">
+        <svg viewBox="0 0 980 470" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+          <defs>
+            <marker id="arr-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+            </marker>
+            <marker id="arr-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#34d399"/>
+            </marker>
+            <marker id="arr-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#c084fc"/>
+            </marker>
+          </defs>
+          <rect x="12" y="16" width="215" height="438" rx="14" fill="rgba(56,189,248,0.06)" stroke="#38bdf8" stroke-dasharray="5 4"/>
+          <text x="26" y="40" fill="#38bdf8" font-size="13" font-weight="700">內網辦公端（Client）</text>
+          <rect x="255" y="16" width="712" height="438" rx="14" fill="rgba(129,140,248,0.06)" stroke="#818cf8" stroke-dasharray="5 4"/>
+          <text x="272" y="40" fill="#818cf8" font-size="13" font-weight="700">純內網 Kubernetes 叢集（Namespace: robotics — 完全無外網）</text>
+
+          <rect x="28" y="64" width="183" height="82" rx="10" fill="#161f3d" stroke="#38bdf8"/>
+          <text x="42" y="88" fill="#e6ecff" font-size="13" font-weight="700">Chrome / Edge 瀏覽器</text>
+          <text x="42" y="108" fill="#98a6cc" font-size="11.5">https://dio.selkies.local/</text>
+          <text x="42" y="126" fill="#34d399" font-size="11.5">WebRTC 視訊/音訊/鍵鼠</text>
+
+          <rect x="28" y="166" width="183" height="82" rx="10" fill="#161f3d" stroke="#c084fc"/>
+          <text x="42" y="190" fill="#e6ecff" font-size="13" font-weight="700">VS Code / SSH 客戶端</text>
+          <text x="42" y="210" fill="#98a6cc" font-size="11.5">wss://dio.selkies.local/ssh</text>
+          <text x="42" y="228" fill="#c084fc" font-size="11.5">ProxyCommand websocat</text>
+
+          <rect x="28" y="280" width="183" height="150" rx="10" fill="#161f3d" stroke="#fbbf24"/>
+          <text x="42" y="304" fill="#fbbf24" font-size="12.5" font-weight="700">純內網與受限 IP 保證</text>
+          <text x="42" y="326" fill="#98a6cc" font-size="11">• 零 stun.l.google.com</text>
+          <text x="42" y="345" fill="#98a6cc" font-size="11">• 零外網 Registry 存取</text>
+          <text x="42" y="364" fill="#98a6cc" font-size="11">• 零 Isaac Sim 遙測連線</text>
+          <text x="42" y="383" fill="#98a6cc" font-size="11">• 零個人 LoadBalancer IP</text>
+          <text x="42" y="402" fill="#98a6cc" font-size="11">• 零 SSH NodePort 暴露</text>
+
+          <rect x="275" y="64" width="175" height="150" rx="10" fill="#161f3d" stroke="#38bdf8" stroke-width="1.5"/>
+          <text x="290" y="88" fill="#38bdf8" font-size="13" font-weight="700">Ingress-NGINX</text>
+          <text x="290" y="106" fill="#e6ecff" font-size="11.5">單一共享 IP : TCP 443</text>
+          <text x="290" y="128" fill="#98a6cc" font-size="11">Wildcard TLS 終止</text>
+          <text x="290" y="148" fill="#38bdf8" font-size="11">/      → svc:80 → Pod:8080</text>
+          <text x="290" y="166" fill="#c084fc" font-size="11">/ssh  → svc:2223 → Pod:2223</text>
+          <text x="290" y="188" fill="#98a6cc" font-size="10.5">dio / alice.selkies.local</text>
+
+          <rect x="275" y="236" width="175" height="196" rx="10" fill="#161f3d" stroke="#818cf8"/>
+          <text x="290" y="260" fill="#818cf8" font-size="12.5" font-weight="700">Helm: robotics-infra</text>
+          <text x="290" y="282" fill="#e6ecff" font-size="11">• selkies-airgap-rtc-config</text>
+          <text x="298" y="298" fill="#98a6cc" font-size="10.5">(iceServers: [] 禁外網 STUN)</text>
+          <text x="290" y="320" fill="#e6ecff" font-size="11">• NetworkPolicy 租戶隔離</text>
+          <text x="298" y="336" fill="#98a6cc" font-size="10.5">(阻斷橫向互連 &amp; Metadata)</text>
+          <text x="290" y="358" fill="#e6ecff" font-size="11">• LimitRange 資源防呆</text>
+          <text x="290" y="380" fill="#e6ecff" font-size="11">• 客製 Seccomp Profile</text>
+          <text x="290" y="402" fill="#98a6cc" font-size="11">• (選配) 共用 Coturn 中繼</text>
+
+          <rect x="488" y="64" width="460" height="256" rx="12" fill="#161f3d" stroke="#34d399" stroke-width="1.5"/>
+          <text x="504" y="88" fill="#34d399" font-size="13" font-weight="700">使用者 Pod（k8s/users/dio — kubectl apply -k，非 Root UID 1000）</text>
+
+          <rect x="504" y="102" width="136" height="90" rx="8" fill="#0c1224" stroke="#38bdf8"/>
+          <text x="514" y="122" fill="#38bdf8" font-size="12" font-weight="700">Selkies v2.2.1</text>
+          <text x="514" y="140" fill="#e6ecff" font-size="11">TCP :8080 (BasicAuth)</text>
+          <text x="514" y="156" fill="#34d399" font-size="11">UDP :50001 hostPort</text>
+          <text x="514" y="172" fill="#98a6cc" font-size="10.5">X11/EGL + NVENC</text>
+
+          <rect x="652" y="102" width="136" height="90" rx="8" fill="#0c1224" stroke="#c084fc"/>
+          <text x="662" y="122" fill="#c084fc" font-size="12" font-weight="700">Rootless SSH</text>
+          <text x="662" y="140" fill="#e6ecff" font-size="11">websocat :2223</text>
+          <text x="662" y="156" fill="#e6ecff" font-size="11">→ sshd 127.0.0.1:2222</text>
+          <text x="662" y="172" fill="#98a6cc" font-size="10.5">HostKey 持久化於 PVC</text>
+
+          <rect x="800" y="102" width="134" height="90" rx="8" fill="#0c1224" stroke="#fbbf24"/>
+          <text x="810" y="122" fill="#fbbf24" font-size="12" font-weight="700">ROS 2 + Podman</text>
+          <text x="810" y="140" fill="#e6ecff" font-size="11">Jazzy + MoveIt 2</text>
+          <text x="810" y="156" fill="#e6ecff" font-size="11">zenohd :7447 (SHM)</text>
+          <text x="810" y="172" fill="#98a6cc" font-size="10.5">mig-podman / pasta</text>
+
+          <rect x="504" y="206" width="430" height="98" rx="8" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-dasharray="4 3"/>
+          <text x="516" y="228" fill="#34d399" font-size="12" font-weight="700">硬體與安全隔離邊界</text>
+          <text x="516" y="248" fill="#e6ecff" font-size="11">• GPU：RTX PRO 6000 Blackwell +gfx MIG（例：nvidia.com/mig-2g.48gb.gfx: 1）</text>
+          <text x="516" y="266" fill="#e6ecff" font-size="11">• 安全：privileged: false｜drop ALL + 6 Caps｜Localhost Seccomp（封鎖 45 高危 syscall）</text>
+          <text x="516" y="284" fill="#98a6cc" font-size="11">• /dev/shm: 8Gi Memory｜/dev/net/tun: CharDevice（或 smarter-device-manager）</text>
+
+          <rect x="488" y="340" width="145" height="92" rx="10" fill="#161f3d" stroke="#38bdf8"/>
+          <text x="500" y="362" fill="#38bdf8" font-size="12" font-weight="700">個人 PVC (RWO)</text>
+          <text x="500" y="380" fill="#e6ecff" font-size="11">/home/ubuntu</text>
+          <text x="500" y="398" fill="#98a6cc" font-size="10.5">程式 / SSH Keys /</text>
+          <text x="500" y="413" fill="#98a6cc" font-size="10.5">Isaac 快取 (~/.isaac-sim)</text>
+
+          <rect x="646" y="340" width="145" height="92" rx="10" fill="#161f3d" stroke="#fbbf24"/>
+          <text x="658" y="362" fill="#fbbf24" font-size="12" font-weight="700">Podman PVC (RWO)</text>
+          <text x="658" y="380" fill="#e6ecff" font-size="10.5">.local/share/containers</text>
+          <text x="658" y="398" fill="#98a6cc" font-size="10.5">實體 ext4/xfs 捲宗</text>
+          <text x="658" y="413" fill="#98a6cc" font-size="10.5">原生 overlay 免 FUSE</text>
+
+          <rect x="804" y="340" width="144" height="92" rx="10" fill="#161f3d" stroke="#c084fc"/>
+          <text x="816" y="362" fill="#c084fc" font-size="12" font-weight="700">共用唯讀 PVC (ROX)</text>
+          <text x="816" y="380" fill="#e6ecff" font-size="11">/opt/isaac-sim</text>
+          <text x="816" y="398" fill="#98a6cc" font-size="10.5">/opt/isaac-sim-assets</text>
+          <text x="816" y="413" fill="#98a6cc" font-size="10.5">多人零複製共用本體</text>
+
+          <line x1="211" y1="96" x2="273" y2="96" stroke="#38bdf8" stroke-width="2" marker-end="url(#arr-blue)"/>
+          <text x="218" y="89" fill="#38bdf8" font-size="10">HTTPS</text>
+          <line x1="211" y1="196" x2="273" y2="165" stroke="#c084fc" stroke-width="2" marker-end="url(#arr-purple)"/>
+          <text x="215" y="174" fill="#c084fc" font-size="10">WSS</text>
+          <line x1="450" y1="126" x2="502" y2="126" stroke="#38bdf8" stroke-width="2" marker-end="url(#arr-blue)"/>
+          <path d="M 450 162 L 472 162 L 472 78 L 720 78 L 720 100" fill="none" stroke="#c084fc" stroke-width="1.8" marker-end="url(#arr-purple)"/>
+          <path d="M 211 132 L 242 132 L 242 52 L 572 52 L 572 100" fill="none" stroke="#34d399" stroke-width="2.2" stroke-dasharray="6 3" marker-end="url(#arr-green)"/>
+          <text x="310" y="47" fill="#34d399" font-size="10.5" font-weight="700">低延遲直連 WebRTC UDP Mux (status.hostIP:50001)</text>
+          <line x1="560" y1="320" x2="560" y2="338" stroke="#38bdf8" stroke-width="1.8" marker-end="url(#arr-blue)"/>
+          <line x1="718" y1="320" x2="718" y2="338" stroke="#fbbf24" stroke-width="1.8"/>
+          <line x1="876" y1="320" x2="876" y2="338" stroke="#c084fc" stroke-width="1.8" marker-end="url(#arr-purple)"/>
+        </svg>
+      </div>
+    </section>
+
+    <!-- 3. Transport Modes -->
+    <section id="sec-transport" class="searchable">
+      <h2><span class="sec-num">3</span>三種純內網傳輸模式比較</h2>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="t-udpmux">模式 A：webrtc-udp-mux（預設推薦）</button>
+        <button class="tab-btn" data-tab="t-coturn">模式 B：webrtc-coturn（隔離私網）</button>
+        <button class="tab-btn" data-tab="t-ws">模式 C：websockets（純 TCP 443）</button>
+      </div>
+      <div class="tab-panel active" data-panel="t-udpmux">
+        <div class="card">
+          <h4>WebRTC UDP Mux + ICE-lite（多人最低延遲・水平分散負載）</h4>
+          <p style="margin-bottom:10px">每位使用者配置 1 個全域唯一 UDP <code>hostPort</code>（<code>50001..50999</code>），Downward API 自動帶入排程到的 GPU 節點 <code>status.hostIP</code>，零中繼瓶頸、零外網 STUN。</p>
+          <div class="code-block">
+            <div class="code-header"><span>關鍵啟動參數</span><button class="copy-btn">複製</button></div>
+            <pre><code>SELKIES_MODE=webrtc
+SELKIES_ENABLE_DUAL_MODE=true        # 側邊欄仍保留一鍵切 WebSockets 保底
+SELKIES_WEBRTC_ICE_LITE=true
+SELKIES_WEBRTC_UDP_MUX_PORT=50001    # 同步設 containers[0].ports[3].containerPort/hostPort
+SELKIES_WEBRTC_PUBLIC_IP=&lt;status.hostIP&gt;
+SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="tab-panel" data-panel="t-coturn">
+        <div class="card">
+          <h4>內部共用 Coturn 中繼（客戶端無法直連 GPU 節點時適用）</h4>
+          <p style="margin-bottom:10px">在 <code>charts/robotics-infra/values.yaml</code> 開啟 <code>coturn.enabled: true</code>，全叢集共用單一邊界節點進行 HMAC 驗證的 UDP 中繼。</p>
+          <div class="code-block">
+            <div class="code-header"><span>啟用共用 Coturn 並指定邊界 IP</span><button class="copy-btn">複製</button></div>
+            <pre><code>helm upgrade --install robotics-infra ./charts/robotics-infra \
+  -n robotics --create-namespace \
+  --set coturn.enabled=true \
+  --set coturn.externalIp=192.168.10.50 \
+  --set coturn.existingSecretName=coturn-turn-secret</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="tab-panel" data-panel="t-ws">
+        <div class="card">
+          <h4>純 WebSockets 模式（零 UDP 防火牆規則，100% 單一 Ingress TCP 443）</h4>
+          <p style="margin-bottom:10px">於使用者 <code>kustomization.yaml</code> 加入 <code>../../components/transport-websockets</code>，自動移除 UDP <code>hostPort</code> 並切換 <code>SELKIES_MODE=websockets</code>。</p>
+          <div class="code-block">
+            <div class="code-header"><span>k8s/users/&lt;user&gt;/kustomization.yaml</span><button class="copy-btn">複製</button></div>
+            <pre><code>components:
+  - ../../components/seccomp-podman-localhost
+  - ../../components/transport-websockets</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Directory Tree -->
+    <section id="sec-files" class="searchable">
+      <h2><span class="sec-num">4</span>專案目錄結構與檔案分工</h2>
+      <div class="tree"><span class="dir">robot-infra/</span>
+├── <span class="star">Dockerfile</span>                                 <span class="cmt"># 主映像定義（已含全量安全升級與 CVE 修補）</span>
+├── .dockerignore                              <span class="cmt"># 排除壓縮檔與暫存檔</span>
+├── <span class="star">README.md</span>                                  <span class="cmt"># Markdown 完整參數與部署文件</span>
+├── <span class="star">project-overview.html</span>                      <span class="cmt"># 本單檔純 HTML 互動式技術手冊（零外部依賴）</span>
+├── <span class="dir">config/</span>                                    <span class="cmt"># containers.conf / storage.conf / registries.conf</span>
+├── <span class="dir">scripts/</span>                                   <span class="cmt"># init-perms.sh / start-selkies.sh / start-sshd.sh / mig-podman / launch-isaac-sim</span>
+├── <span class="dir">supervisor/</span>                                <span class="cmt"># init-perms(1) / selkies(40) / sshd(50) / ssh-ws(55) / zenohd(60)</span>
+├── <span class="dir">charts/</span>
+│   ├── <span class="star">robotics-infra/</span>                        <span class="cmt"># ★ 基礎設施 Helm Chart（RTC / NetworkPolicy / LimitRange / Seccomp / 選配 Coturn）</span>
+│   ├── selkies-user/                          <span class="cmt"># （選配）全 Helm 版單使用者 Chart</span>
+│   └── coturn-infra/                          <span class="cmt"># （選配）獨立 Coturn Helm Chart</span>
+├── <span class="dir">k8s/</span>                                       <span class="cmt"># ★ 使用者層純 kubectl apply -k（免 Helm）</span>
+│   ├── base/                                  <span class="cmt">#   pvc / deployment / service / ingress</span>
+│   ├── components/                            <span class="cmt">#   seccomp-podman-localhost / shared-isaac-sim / transport-websockets / apparmor-unconfined</span>
+│   └── users/                                 <span class="cmt">#   dio/、alice/ 與批次 kustomization.yaml</span>
+├── <span class="dir">coturn/</span>                                    <span class="cmt"># 內網自建 Coturn Dockerfile</span>
+└── <span class="dir">deploy/</span>
+    ├── gpu-operator/custom-mig-parted-config.yaml <span class="cmt"># RTX PRO 6000 Blackwell +gfx MIG 切分</span>
+    └── deploy.sh / shared-defaults.yaml / users/  <span class="cmt"># Helm 版單人／批次部署輔助</span></div>
+    </section>
+
+    <!-- 5. COMPLETE INTERACTIVE PARAMETER DICTIONARY -->
+    <section id="sec-params" class="searchable">
+      <h2><span class="sec-num">5</span>全平台可控參數與啟動參數字典（支援即時篩選）</h2>
+      <div class="param-toolbar">
+        <input id="paramFilter" class="param-filter" type="search" placeholder="篩選參數名稱、預設值或說明（例如：SELKIES_、coturn、MIG_、seccomp、ISAAC_）..." />
+        <span id="paramCount" class="param-count"></span>
+      </div>
+
+      <div class="tabs" id="paramTabs">
+        <button class="tab-btn active" data-tab="p-container">1. 容器啟動 &amp; Build 參數</button>
+        <button class="tab-btn" data-tab="p-infra">2. Helm Infra 參數</button>
+        <button class="tab-btn" data-tab="p-k8s">3. Kustomize &amp; Components</button>
+        <button class="tab-btn" data-tab="p-helmuser">4. Helm selkies-user &amp; MIG</button>
+        <button class="tab-btn" data-tab="p-podman">5. Podman config/ 參數</button>
+      </div>
+
+      <!-- Tab 1: Container Runtime & Build Args -->
+      <div class="tab-panel active" data-panel="p-container">
+        <h3>Dockerfile 建置參數（<code>--build-arg</code>）</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>參數名稱</th><th>預設值</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>ROS_DISTRO</code></td><td><code>jazzy</code></td><td>安裝的 ROS 2 發行版（Ubuntu 24.04 對應 Jazzy）</td></tr>
+              <tr><td><code>SELKIES_VERSION</code></td><td><code>2.2.1</code></td><td>從官方 GitHub Releases 下載並校驗 SHA256 之 Selkies `.deb` 版本</td></tr>
+              <tr><td><code>WEBSOCAT_VERSION</code></td><td><code>v1.14.1</code></td><td>Ingress `/ssh` WebSocket 隧道橋接工具版本</td></tr>
+              <tr><td><code>YQ_VERSION</code></td><td><code>v4.54.3</code></td><td>升級 <code>/usr/bin/yq</code> 版本（消除基底舊版 Go stdlib CVE）</td></tr>
+              <tr><td><code>DEBIAN_FRONTEND</code></td><td><code>noninteractive</code></td><td>停用 apt 安裝互動介面</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Selkies v2.2.1 串流、認證與網路環境變數（<code>docker run -e</code> / K8s <code>env</code>）</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>環境變數</th><th>預設值</th><th>可選值 / 說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>SELKIES_PORT</code></td><td><code>8080</code></td><td>Selkies HTTP/WebSocket 服務監聽埠</td></tr>
+              <tr><td><code>SELKIES_ADDR</code></td><td>（未設）</td><td>留空時以 <code>--public</code> 監聽 <code>0.0.0.0</code>；填值則綁定指定介面</td></tr>
+              <tr><td><code>SELKIES_MODE</code></td><td><code>webrtc</code></td><td><code>webrtc</code> 或 <code>websockets</code>（純 TCP 測試建議 <code>websockets</code>）</td></tr>
+              <tr><td><code>SELKIES_ENABLE_DUAL_MODE</code></td><td><code>true</code></td><td>允許網頁側邊欄自由切換 WebRTC / WebSockets</td></tr>
+              <tr><td><code>SELKIES_ENABLE_HTTPS</code></td><td><code>false</code></td><td>K8s 由 Ingress 終止 TLS，容器內保持 <code>false</code></td></tr>
+              <tr><td><code>SELKIES_ENABLE_BASIC_AUTH</code></td><td><code>true</code></td><td>開啟 HTTP Basic Auth 登入驗證</td></tr>
+              <tr><td><code>SELKIES_BASIC_AUTH_USER</code></td><td><code>ubuntu</code></td><td>網頁登入帳號（各使用者 YAML 改為個人帳號如 <code>dio</code>）</td></tr>
+              <tr><td><code>SELKIES_BASIC_AUTH_PASSWORD</code></td><td>（Secret）</td><td>網頁登入密碼；未設時回退讀取 <code>PASSWD</code></td></tr>
+              <tr><td><code>PASSWD</code></td><td>（Secret）</td><td>由 <code>init-perms.sh</code> 同步為 Linux <code>ubuntu</code> 的 SSH 與 <code>sudo</code> 密碼</td></tr>
+              <tr><td><code>SELKIES_ENCODER</code></td><td><code>h264enc,h265enc,vp9enc,av1enc,h264enc-striped,jpeg</code></td><td><strong>首項為預設編碼器</strong>（<code>h264enc</code> 自動 NVENC/x264）；列出多項才不會鎖死網頁 UI 選單</td></tr>
+              <tr><td><code>SELKIES_FRAMERATE</code></td><td><code>60</code></td><td>目標畫面更新率（FPS）</td></tr>
+              <tr><td><code>SELKIES_VIDEO_BITRATE</code></td><td><code>12000</code></td><td>預設視訊位元率（Kbps）</td></tr>
+              <tr><td><code>SELKIES_AUDIO_BITRATE</code></td><td>（留空）</td><td>留空採 128000 且不鎖定網頁音訊位元率下拉選單</td></tr>
+              <tr><td><code>SELKIES_ENABLE_RESIZE</code></td><td><code>true</code></td><td>隨瀏覽器視窗自動調整遠端桌面解析度</td></tr>
+              <tr><td><code>SELKIES_WEBRTC_PACER</code></td><td><code>true</code></td><td>啟用封包平滑發送降低高幀率掉幀</td></tr>
+              <tr><td><code>SELKIES_WEBRTC_ICE_LITE</code></td><td><code>false</code>（UDP Mux 設 <code>true</code>）</td><td><code>webrtc-udp-mux</code> 必設 <code>true</code>；走 Coturn 或 STUN 須設 <code>false</code></td></tr>
+              <tr><td><code>SELKIES_WEBRTC_UDP_MUX_PORT</code></td><td>（未設）</td><td>單埠 UDP Mux 埠號（如 <code>50001</code>），須與 K8s <code>hostPort</code> 一致且每人唯一</td></tr>
+              <tr><td><code>SELKIES_WEBRTC_TCP_MUX_PORT</code></td><td>（未設）</td><td>選配 ICE-TCP 被動候選埠號（<code>0</code> 為關閉）</td></tr>
+              <tr><td><code>SELKIES_WEBRTC_PUBLIC_IP</code></td><td>（Downward API）</td><td>K8s 自動綁定 <code>status.hostIP</code>，告知瀏覽器直連 GPU 節點 IP</td></tr>
+              <tr><td><code>SELKIES_RTC_CONFIG_JSON</code></td><td><code>/etc/selkies/rtc-config.json</code></td><td>掛載 <code>{"iceServers": []}</code>，徹底阻止接觸 <code>stun.l.google.com</code></td></tr>
+              <tr><td><code>SELKIES_TURN_HOST / PORT / PROTOCOL / TLS / SHARED_SECRET</code></td><td>（未設）</td><td>僅 <code>webrtc-coturn</code> 模式使用之內部 Coturn 連線與 HMAC 憑證參數</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>系統、GPU、ROS 2 Jazzy 與 Podman 環境變數</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>環境變數</th><th>預設值</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>TZ</code></td><td><code>Asia/Taipei</code></td><td>容器時區</td></tr>
+              <tr><td><code>DISPLAY</code></td><td>自動偵測 <code>:20</code></td><td>由 <code>/etc/profile.d/99-robotics-env.sh</code> 自動偵測 <code>/tmp/.X11-unix/X*</code></td></tr>
+              <tr><td><code>XDG_RUNTIME_DIR</code></td><td><code>/tmp/runtime-ubuntu</code></td><td>PipeWire / PulseAudio runtime 目錄</td></tr>
+              <tr><td><code>NVIDIA_DRIVER_CAPABILITIES</code></td><td><code>all</code></td><td>啟用完整圖形、Vulkan/EGL、NVENC 與 CUDA 能力</td></tr>
+              <tr><td><code>ROS_DOMAIN_ID</code></td><td><code>11</code></td><td>ROS 2 隔離網域 ID（建議每位開發者獨立編號）</td></tr>
+              <tr><td><code>RMW_IMPLEMENTATION</code></td><td><code>rmw_zenoh_cpp</code></td><td>ROS 2 RMW 實作（預設 Zenoh，可切 CycloneDDS/FastRTPS）</td></tr>
+              <tr><td><code>ZENOH_ROUTER_CHECK_ATTEMPTS</code></td><td><code>5</code></td><td>啟動節點時探測本機 <code>zenohd</code>（<code>127.0.0.1:7447</code>）的重試次數</td></tr>
+              <tr><td><code>ZENOH_CONFIG_OVERRIDE</code></td><td>SHM 256MB</td><td>開啟 <code>transport/shared_memory/enabled=true</code> 與 256MB 共享記憶體池</td></tr>
+              <tr><td><code>BUILDAH_ISOLATION</code></td><td><code>chroot</code></td><td>無特權容器內使用 <code>podman build</code> 必備隔離模式</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 2: Helm Infra -->
+      <div class="tab-panel" data-panel="p-infra">
+        <h3><code>charts/robotics-infra/values.yaml</code> 完整可控參數</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>參數路徑</th><th>預設值</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>airGapRtcConfig.enabled</code> / <code>name</code></td><td><code>true</code> / <code>selkies-airgap-rtc-config</code></td><td>產生空 <code>iceServers: []</code> 的共用 ConfigMap，防止外網 STUN 請求</td></tr>
+              <tr><td><code>networkPolicy.enabled</code></td><td><code>true</code></td><td>啟用多租戶隔離 NetworkPolicy（需 Calico / Cilium）</td></tr>
+              <tr><td><code>networkPolicy.ingressNamespaceSelector</code></td><td><code>kubernetes.io/metadata.name: ingress-nginx</code></td><td>允許 Ingress-NGINX 存取 Pod <code>8080</code> 與 <code>2223</code></td></tr>
+              <tr><td><code>networkPolicy.allowWebrtcUdpMux</code></td><td><code>true</code></td><td>放行辦公網段直連節點 UDP Mux 埠段</td></tr>
+              <tr><td><code>networkPolicy.webrtcUdpPortStart / End</code></td><td><code>50000</code> / <code>51000</code></td><td>允許的 WebRTC UDP 埠號範圍</td></tr>
+              <tr><td><code>networkPolicy.clientCidrs</code></td><td>RFC1918 三大私網</td><td>允許直連 WebRTC UDP 的客戶端來源 CIDR</td></tr>
+              <tr><td><code>networkPolicy.podCidr</code></td><td><code>10.244.0.0/16</code></td><td>於 Egress 排除（<code>except</code>）以阻斷跨使用者 Pod 橫向互連</td></tr>
+              <tr><td><code>networkPolicy.allowedEgressCidrs</code></td><td>RFC1918 三大私網</td><td>允許存取之內網服務網段（Harbor、Git、PyPI 等）</td></tr>
+              <tr><td><code>networkPolicy.blockedEgressCidrs</code></td><td><code>169.254.169.254/32</code></td><td>強制封鎖 Metadata IP</td></tr>
+              <tr><td><code>limitRange.enabled</code></td><td><code>true</code></td><td>啟用單容器資源防呆上下限</td></tr>
+              <tr><td><code>limitRange.maxCpu / maxMemory</code></td><td><code>32</code> / <code>128Gi</code></td><td>單容器上限，防止單人 YAML 吃滿整台節點</td></tr>
+              <tr><td><code>limitRange.defaultRequest* / defaultLimit*</code></td><td><code>2C/8Gi</code> / <code>8C/32Gi</code></td><td>未填資源限制時的預設請求與上限</td></tr>
+              <tr><td><code>coturn.enabled</code></td><td><code>false</code></td><td>隔離私網需中繼時改 <code>true</code> 部署共用 Coturn</td></tr>
+              <tr><td><code>coturn.image.repository / tag</code></td><td><code>registry.local/robotics/coturn:4.6.2-alpine-patched</code></td><td>內網私有 Coturn 映像檔（可用 <code>coturn/Dockerfile</code> 自建）</td></tr>
+              <tr><td><code>coturn.nodeSelector</code></td><td><code>kubernetes.io/hostname: edge-node-01</code></td><td>固定排程於邊界中繼節點</td></tr>
+              <tr><td><code>coturn.externalIp</code> / <code>realm</code></td><td><code>192.168.10.50</code> / <code>selkies.local</code></td><td>Coturn 對外宣告之內網 IP 與認證 Realm</td></tr>
+              <tr><td><code>coturn.listeningPort / minPort / maxPort</code></td><td><code>3478</code> / <code>50000</code> / <code>51000</code></td><td>TURN 監聽埠與媒體中繼 UDP 埠段</td></tr>
+              <tr><td><code>coturn.podCidr</code> / <code>noTcpRelay</code></td><td><code>10.244.0.0-10.244.255.255</code> / <code>false</code></td><td>限制中繼目標僅限叢集 Pod 網段，避免成為開放跳板</td></tr>
+              <tr><td><code>coturn.existingSecretName / sharedSecret</code></td><td><code>""</code></td><td>TURN HMAC 密鑰（生產環境務必使用 <code>existingSecretName</code>）</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 3: Kustomize & Components -->
+      <div class="tab-panel" data-panel="p-k8s">
+        <h3><code>k8s/users/&lt;user&gt;/</code> 個別使用者可控欄位</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>檔案</th><th>參數 / Patch 路徑</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>auth.env</code></td><td><code>WEB_PASSWORD</code> / <code>LINUX_PASSWORD</code></td><td>自動產生 <code>&lt;user&gt;-selkies-auth</code> Secret（分別注入 Basic Auth 與 <code>PASSWD</code>）</td></tr>
+              <tr><td><code>kustomization.yaml</code></td><td><code>namePrefix</code> / <code>labels.pairs.app.kubernetes.io/user</code></td><td>隔離每位使用者的 Deployment、Service、Ingress、Secret 與 PVC 名稱</td></tr>
+              <tr><td><code>kustomization.yaml</code></td><td><code>/spec/template/spec/containers/0/ports/3/{containerPort,hostPort}</code></td><td>非 <code>50001</code> 使用者必設（參考 <code>alice/kustomization.yaml</code> 改為 <code>50002</code>）</td></tr>
+              <tr><td><code>kustomization.yaml</code></td><td><code>/spec/tls/0/hosts/0</code> 與 <code>/spec/rules/0/host</code></td><td>個人專屬域名（例：<code>bob.selkies.local</code>），全部指向同一 Ingress IP</td></tr>
+              <tr><td><code>patch.yaml</code></td><td><code>SELKIES_BASIC_AUTH_USER</code> / <code>SELKIES_WEBRTC_UDP_MUX_PORT</code> / <code>ROS_DOMAIN_ID</code></td><td>覆寫登入帳號、唯一 UDP 埠與 ROS 2 隔離 Domain ID</td></tr>
+              <tr><td><code>patch.yaml</code></td><td><code>resources.{requests,limits}</code>（含 <code>nvidia.com/mig-*</code>）</td><td>調整 CPU/RAM 與 MIG 切分規格（升級至 <code>2g.48gb.gfx</code> 時須將基底 <code>1g.24gb.gfx</code> 設為 <code>null</code>）</td></tr>
+              <tr><td><code>patch.yaml</code></td><td><code>selkies-pvc</code> / <code>selkies-podman-pvc</code> 儲存容量</td><td>依開發需求擴充個人目錄（預設 100Gi）與 Podman 空間（預設 80Gi）</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>六個可插拔 Kustomize Components（<code>k8s/components/</code>）</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>Component 路徑</th><th>修改的 Kubernetes 欄位</th><th>使用時機</th></tr></thead>
+            <tbody>
+              <tr><td><code>../../components/seccomp-podman-localhost</code></td><td><code>seccompProfile: {type: Localhost, localhostProfile: profiles/podman-rootless.json}</code></td><td><strong>Linux 生產必開</strong>：取代 <code>Unconfined</code>，封鎖 45 項高危 syscall</td></tr>
+              <tr><td><code>../../components/smarter-device-tun</code></td><td>移除 <code>hostPath: /dev/net/tun</code>，改申請 <code>smarter-devices/net_tun: 1</code></td><td><strong>OPA Gatekeeper 禁止 <code>hostPath</code> 必開</strong>（<code>smarter-device-manager</code> 僅鎖 PRO 6000 節點）</td></tr>
+              <tr><td><code>../../components/cross-pod-ros</code></td><td>注入 <code>ROS_BRIDGE_HUB_ENDPOINT</code> 與 <code>ROS_BRIDGE_HUB_WSS_URL</code></td><td>搭配 <code>rosZenohHub.enabled=true</code>，執行 <code>ros-bridge hub</code> 免查 K8s Service</td></tr>
+              <tr><td><code>../../components/shared-isaac-sim</code></td><td>唯讀掛載 <code>isaac-sim-6-2-shared-ro-pvc</code>（<code>/opt/isaac-sim</code>）與 <code>isaac-sim-6-2-assets-ro-pvc</code>（<code>/opt/isaac-sim-assets</code>）</td><td>需要執行 Isaac Sim 6.2 模擬的使用者</td></tr>
+              <tr><td><code>../../components/transport-websockets</code></td><td>移除 <code>ports[3]</code>（UDP hostPort），改 <code>SELKIES_MODE=websockets</code>、<code>ENABLE_DUAL_MODE=false</code>、<code>ICE_LITE=false</code></td><td>防火牆完全封鎖 UDP，改走純 TCP 443</td></tr>
+              <tr><td><code>../../components/apparmor-unconfined</code></td><td><code>appArmorProfile: {type: Unconfined}</code>（K8s 1.30+ GA）</td><td>Ubuntu 24.04 Linux 節點開啟 unprivileged userns AppArmor 限制時必開</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 4: Helm selkies-user & MIG -->
+      <div class="tab-panel" data-panel="p-helmuser">
+        <h3>（選配）<code>charts/selkies-user/values.yaml</code> 與 <code>deploy/deploy.sh</code> 參數</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>參數群組</th><th>關鍵欄位與預設值</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>user.*</code></td><td><code>name</code>, <code>enabled</code>, <code>timezone</code>, <code>rosDomainId</code>, <code>auth.existingSecretName</code></td><td>個人身分、時區、ROS Domain 與既有 Secret 參考</td></tr>
+              <tr><td><code>transport.*</code></td><td><code>mode</code> (<code>webrtc-udp-mux</code>|<code>webrtc-coturn</code>|<code>websockets</code>), <code>udpMuxPort</code>, <code>tcpMuxPort</code>, <code>publicIpOverride</code></td><td>一鍵切換三種傳輸架構與覆寫對外 NAT IP</td></tr>
+              <tr><td><code>ingress.*</code></td><td><code>routingMode</code> (<code>subdomain</code> | <code>subfolder</code>), <code>baseDomain</code>, <code>host</code>, <code>tls.secretName</code></td><td><strong><code>subfolder</code> 模式免 Wildcard DNS</strong>（單一域名 <code>/user/</code> 與 <code>/user/ssh</code> 分流）</td></tr>
+              <tr><td><code>ssh.*</code></td><td><code>enabled</code>, <code>mode</code> (<code>ingress-ws</code>|<code>tcp-ingress</code>), <code>sshdPort: 2222</code>, <code>wsBridgePort: 2223</code>, <code>ingressPath: "/ssh"</code></td><td>控制 SSH 隧道方式與路徑</td></tr>
+              <tr><td><code>storage.*</code> &amp; <code>podman.*</code></td><td><code>personalPvc.*</code>, <code>sharedIsaacPvc.*</code>, <code>sharedIsaacAssetsPvc.*</code>, <code>podman.{enabled, mountTun, storage.*}</code></td><td>階段式開啟個人 PVC、唯讀 Isaac Sim PVC 與 Rootless Podman PVC</td></tr>
+              <tr><td><code>deploy/deploy.sh</code></td><td><code>./deploy/deploy.sh &lt;user|--all&gt; [extra helm flags]</code>（支援 <code>NAMESPACE=</code>）</td><td>自動合併 <code>deploy/shared-defaults.yaml</code> 與 <code>deploy/users/&lt;user&gt;.yaml</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>NVIDIA GPU Operator <code>custom-mig-parted-config.yaml</code> 切分 Profile</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>MIG Profile 名稱</th><th>單卡 96GB 配置</th><th>適用場景</th></tr></thead>
+            <tbody>
+              <tr><td><code>all-disabled</code></td><td>不啟用 MIG</td><td>保留給非 MIG 節點防呆</td></tr>
+              <tr><td><code>all-1g.24gb.gfx</code></td><td><code>4 × 1g.24gb+gfx</code></td><td>4 人高密度共享單卡（ROS 2 / MoveIt 2 / 一般 3D 視覺化）</td></tr>
+              <tr><td><code>all-2g.48gb.gfx</code></td><td><code>2 × 2g.48gb+gfx</code></td><td>2 人重度模擬（Isaac Sim 6.2 / 大場景 RTX 光追）</td></tr>
+              <tr><td><code>rtx6000-mixed-1x2g-2x1g-gfx</code></td><td><code>1 × 2g.48gb+gfx</code> + <code>2 × 1g.24gb+gfx</code></td><td>★ 主力混切：兼顧 1 位重度模擬與 2 位常規開發</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 5: Podman config/ -->
+      <div class="tab-panel" data-panel="p-podman">
+        <h3>容器內 Rootless Podman 設定檔（<code>config/</code>）</h3>
+        <div class="table-wrap">
+          <table class="param-table">
+            <thead><tr><th>檔案</th><th>參數</th><th>作用與必要性</th></tr></thead>
+            <tbody>
+              <tr><td><code>config/containers.conf</code></td><td><code>default_sysctls = []</code></td><td>避免非特權容器 <code>/proc/sys</code> 唯讀導致 <code>ping_group_range: Read-only file system</code></td></tr>
+              <tr><td><code>config/containers.conf</code></td><td><code>cgroups = "disabled"</code> / <code>cgroup_manager = "cgroupfs"</code></td><td>無 systemd 監督環境下避免 cgroup v2 委派錯誤</td></tr>
+              <tr><td><code>config/containers.conf</code></td><td><code>keyring = false</code></td><td>停用內層容器建立 kernel session keyring，使生產 Seccomp 可持續封鎖 <code>keyctl</code>/<code>add_key</code></td></tr>
+              <tr><td><code>config/containers.conf</code></td><td><code>default_rootless_network_cmd = "pasta"</code></td><td>使用高效能 <code>pasta</code> 使用者空間網路（免特權網路命名空間）</td></tr>
+              <tr><td><code>config/storage.conf</code></td><td><code>driver = "overlay"</code> / <code>ignore_chown_errors = "true"</code></td><td>配合空白 <code>/etc/subuid</code>、<code>/etc/subgid</code>（Single-UID）與獨立 PVC，免 FUSE 與 <code>newuidmap</code></td></tr>
+              <tr><td><code>config/registries.conf</code></td><td><code>unqualified-search-registries = ["docker.io"]</code> / <code>short-name-mode = "permissive"</code></td><td>自動解析短名稱映像檔；純內網可將 <code>registry.local</code> 置於陣列最前並啟用 <code>[[registry]]</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. CLI Tools & Supervisord -->
+    <section id="sec-cli" class="searchable">
+      <h2><span class="sec-num">6</span>內建 CLI 工具啟動參數與 <code>supervisord</code> 服務清單</h2>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="cli-mig">mig-podman 參數</button>
+        <button class="tab-btn" data-tab="cli-bridge">ros-bridge 跨 Pod 參數</button>
+        <button class="tab-btn" data-tab="cli-isaac">launch-isaac-sim 參數</button>
+        <button class="tab-btn" data-tab="cli-sup">supervisord 服務與埠位</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="cli-mig">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>控制開關 / 語法</th><th>預設值</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>mig-podman run|create ...</code></td><td>自動注入</td><td>自動直通 MIG <code>/dev/nvidia*</code>、<code>/dev/nvidia-caps/*</code>、<code>/dev/dri/*</code>、NVIDIA <code>.so</code>、EGL/Vulkan ICD、X11 <code>DISPLAY</code>、ROS2/Zenoh；其他子指令（<code>pull</code>/<code>ps</code>/<code>build</code>）直接透傳</td></tr>
+              <tr><td><code>MIG_PODMAN_NO_GPU=1</code></td><td><code>0</code></td><td>關閉 MIG GPU 裝置與驅動函式庫掛載</td></tr>
+              <tr><td><code>MIG_PODMAN_NO_X11=1</code></td><td><code>0</code></td><td>關閉 X11 Socket 與 <code>DISPLAY</code> 直通（適合純無頭訓練）</td></tr>
+              <tr><td><code>MIG_PODMAN_ZENOH</code></td><td><code>auto</code></td><td><code>auto</code>（有設定就透傳並唯讀掛載 <code>*_CONFIG_URI</code>）｜<code>1</code>（強制 <code>rmw_zenoh_cpp</code>）｜<code>0</code>（關閉）</td></tr>
+              <tr><td><code>MIG_PODMAN_DRY_RUN=1</code></td><td><code>0</code></td><td>僅印出最終完整 <code>podman</code> 指令列，不實際執行</td></tr>
+              <tr><td><code>--network</code> / <code>--ipc</code> / <code>--cgroups</code></td><td><code>host</code> / <code>host</code> / <code>disabled</code></td><td>若使用者手動指定，<code>mig-podman</code> 會尊重使用者值而不覆寫</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block">
+          <div class="code-header"><span>mig-podman 實用指令範例</span><button class="copy-btn">複製</button></div>
+          <pre><code>mig-podman run --rm -it ros:jazzy-ros-base nvidia-smi
+MIG_PODMAN_NO_X11=1 mig-podman run --rm --network=pasta ubuntu:24.04 uname -a
+MIG_PODMAN_DRY_RUN=1 mig-podman run --rm ubuntu:24.04 true</code></pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="cli-bridge">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>指令 / 參數</th><th>預設值</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>ros-bridge serve [--allow REGEX] [-n NS] [-d ID]</code></td><td><code>127.0.0.1:7447</code></td><td>啟動 <code>zenoh-bridge-ros2dds</code> Router，自動經 <code>zenoh-ws :7448</code> 與個人 Ingress <code>wss://&lt;user&gt;.selkies.local/zenoh</code> 對外開放（未執行時預設完全關閉隔離）</td></tr>
+              <tr><td><code>ros-bridge connect &lt;wss://...|tcp/...&gt; [-u user:pass] [-k]</code></td><td>客戶端模式</td><td>將本 Pod（含內層 <code>mig-podman</code>）的 CycloneDDS 橋接至另一 Pod 或實體機器人；支援跨不同 <code>ROS_DOMAIN_ID</code>、Ingress Basic Auth (<code>-u</code>) 與內網自簽 TLS (<code>-k</code>)</td></tr>
+              <tr><td><code>ros-bridge hub [--allow REGEX] [-n NS] [-k]</code></td><td>自動讀取注入環境變數</td><td>優先連線 <code>ROS_BRIDGE_HUB_ENDPOINT</code>（內網高速 ClusterIP），次選 <code>ROS_BRIDGE_HUB_WSS_URL</code>；<strong>使用者完全免查 K8s Service</strong></td></tr>
+              <tr><td><code>ros-bridge status / logs / stop</code></td><td>—</td><td>檢視橋接行程、監聽埠（7447/7448/7449）、最近日誌或一鍵停止</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block">
+          <div class="code-header"><span>跨 Pod CycloneDDS 橋接實戰指令</span><button class="copy-btn">複製</button></div>
+          <pre><code># 1. 點對點跨 Pod（alice 端開放特定 Topic，dio 端經單一 Ingress 443 連入）
+ros-bridge serve --allow "/chatter|/shared/.*"
+ros-bridge connect wss://alice.selkies.local/zenoh -k
+
+# 2. 連接帶 Basic Auth 保護的共用 Zenoh Hub
+ros-bridge connect wss://zenoh.selkies.local/zenoh -u admin:SecretPass -k
+
+# 3. 叢集內部高速星狀模式（啟用 components/cross-pod-ros 後）
+ros-bridge hub</code></pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="cli-isaac">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>啟動模式 / 環境開關</th><th>預設值</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><code>launch-isaac-sim [kit args]</code></td><td>GUI 模式</td><td>於 Selkies X11 開啟介面，自動注入 <code>--portable-root</code>、<code>multiGpu=false</code>、<code>activeGpu=0</code>、<code>telemetry=false</code></td></tr>
+              <tr><td><code>launch-isaac-sim --headless [args]</code></td><td>無頭模式</td><td>額外附加 <code>--no-window</code>，不要求 <code>DISPLAY</code></td></tr>
+              <tr><td><code>launch-isaac-sim --python &lt;py&gt; [args]</code></td><td>Python 模式</td><td>改用 <code>${ISAAC_SIM_RO_DIR}/python.sh</code> 執行 Standalone 腳本</td></tr>
+              <tr><td><code>ISAAC_SIM_RO_DIR</code> / <code>ISAAC_ASSETS_RO_DIR</code></td><td><code>/opt/isaac-sim</code> / <code>/opt/isaac-sim-assets</code></td><td>共用唯讀本體與離線資產 PVC 路徑（存在資產時自動綁定 <code>ISAACSIM_ASSET_ROOT</code>）</td></tr>
+              <tr><td><code>ISAAC_USER_ROOT</code> / <code>ISAAC_TMP_DIR</code></td><td><code>~/.isaac-sim-6.2</code> / <code>/tmp/isaac-sim-ubuntu</code></td><td>集中重導向 Kit、GL/Vulkan/Mesa Shader、CUDA JIT (4GiB)、Warp、Pycache 與 XDG 目錄</td></tr>
+              <tr><td><code>ISAAC_ENABLE_ROS2_BRIDGE=1</code></td><td><code>0</code></td><td>啟動時自動附加 <code>--enable isaacsim.ros2.bridge</code></td></tr>
+              <tr><td><code>ISAAC_SKIP_PREFLIGHT=1</code> / <code>ISAAC_DRY_RUN=1</code></td><td><code>0</code> / <code>0</code></td><td>跳過 Vulkan/MIG 前置檢查；或僅預覽環境變數與最終啟動指令</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block">
+          <div class="code-header"><span>launch-isaac-sim 實用指令範例</span><button class="copy-btn">複製</button></div>
+          <pre><code>ISAAC_ENABLE_ROS2_BRIDGE=1 launch-isaac-sim
+launch-isaac-sim --headless
+launch-isaac-sim --python ~/ws/sim_eval.py --num_envs 32
+ISAAC_SKIP_PREFLIGHT=1 ISAAC_DRY_RUN=1 launch-isaac-sim --headless</code></pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="cli-sup">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>supervisord 服務</th><th>優先序</th><th>監聽埠 / 行為</th><th>日誌路徑</th></tr></thead>
+            <tbody>
+              <tr><td><code>init-perms</code></td><td><code>1</code></td><td>oneshot 權限修正 + 同步 <code>PASSWD</code></td><td><code>/tmp/init-perms.log</code></td></tr>
+              <tr><td><code>entrypoint</code> / <code>dbus</code> / <code>kasmvnc</code> / <code>pipewire*</code></td><td>基底預設</td><td>X11 <code>:20</code>、EGL/DRI3、PipeWire-Pulse</td><td><code>/tmp/*.log</code></td></tr>
+              <tr><td><code>selkies</code></td><td><code>40</code></td><td>TCP <code>:8080</code>（+ UDP Mux 埠）</td><td><code>stdout</code> / <code>stderr</code></td></tr>
+              <tr><td><code>sshd</code></td><td><code>50</code></td><td>TCP <code>:2222</code>（HostKey 存個人 PVC）</td><td><code>/tmp/sshd.log</code></td></tr>
+              <tr><td><code>ssh-ws</code></td><td><code>55</code></td><td>TCP <code>:2223</code> → <code>127.0.0.1:2222</code></td><td><code>/tmp/ssh-ws.log</code></td></tr>
+              <tr><td><code>zenohd</code></td><td><code>60</code></td><td>TCP <code>127.0.0.1:7447</code>（ROS 2 路由）</td><td><code>/tmp/zenohd.log</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block">
+          <div class="code-header"><span>容器內檢查與單獨重啟服務</span><button class="copy-btn">複製</button></div>
+          <pre><code>supervisorctl status
+supervisorctl restart selkies
+supervisorctl tail -f sshd stderr</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Deployment Steps -->
+    <section id="sec-deploy" class="searchable">
+      <h2><span class="sec-num">7</span>完整部署步驟（本機測試・Helm Infra・Kustomize 使用者）</h2>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="d-local">1. 本機 Docker 測試</button>
+        <button class="tab-btn" data-tab="d-infra">2. K8s Infra（Helm）</button>
+        <button class="tab-btn" data-tab="d-user">3. 新增使用者（kubectl apply -k）</button>
+        <button class="tab-btn" data-tab="d-mig">4. MIG、Seccomp 與 OPA 前置</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="d-local">
+        <div class="code-block">
+          <div class="code-header"><span>Linux Bash — 含最小 6 項 Capabilities、客製 Seccomp 與 Podman 支援</span><button class="copy-btn">複製</button></div>
+          <pre><code>docker rm -f test-selkies-v2 2>/dev/null || true
+docker run -d --name test-selkies-v2 \
+  --gpus all --shm-size=4g \
+  --cap-drop=ALL \
+  --cap-add=SETUID --cap-add=SETGID --cap-add=CHOWN \
+  --cap-add=FOWNER --cap-add=DAC_OVERRIDE --cap-add=AUDIT_WRITE \
+  --security-opt seccomp="$(pwd)/charts/robotics-infra/files/podman-rootless-seccomp.json" \
+  --device /dev/net/tun:/dev/net/tun \
+  -v selkies-podman-storage:/home/ubuntu/.local/share/containers \
+  -p 8080:8080 -p 2222:2222 -p 2223:2223 \
+  -e TZ=Asia/Taipei \
+  -e PASSWD="TestPassword123!" \
+  -e SELKIES_ENABLE_BASIC_AUTH="true" \
+  -e SELKIES_BASIC_AUTH_USER="dio" \
+  -e SELKIES_BASIC_AUTH_PASSWORD="TestPassword123!" \
+  -e SELKIES_MODE="websockets" \
+  -e ROS_DOMAIN_ID="11" \
+  fritingo/robot-infra:v2</code></pre>
+        </div>
+        <div class="callout ok">
+          啟動約 15 秒後開啟 <code>http://localhost:8080</code>（帳號 <code>dio</code> / 密碼 <code>TestPassword123!</code>），或 <code>ssh -p 2222 ubuntu@localhost</code>。
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="d-infra">
+        <div class="code-block">
+          <div class="code-header"><span>維運端一次部署基礎設施層</span><button class="copy-btn">複製</button></div>
+          <pre><code>kubectl create namespace robotics
+kubectl -n robotics create secret tls selkies-wildcard-tls \
+  --cert=wildcard.selkies.local.crt --key=wildcard.selkies.local.key
+
+helm upgrade --install robotics-infra ./charts/robotics-infra \
+  -n robotics --create-namespace
+
+kubectl -n robotics get configmap,networkpolicy,limitrange</code></pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="d-user">
+        <div class="code-block">
+          <div class="code-header"><span>日常新增開發者（免 Helm，互不干擾）</span><button class="copy-btn">複製</button></div>
+          <pre><code>cp -r k8s/users/alice k8s/users/bob
+# 編輯 k8s/users/bob/{auth.env, patch.yaml, kustomization.yaml}
+# 1) 設定唯一 UDP Port（如 50003）與 ROS_DOMAIN_ID（如 13）
+# 2) 設定 Ingress Host（bob.selkies.local）並啟用 components/seccomp-podman-localhost
+
+kubectl kustomize k8s/users/bob | less   # 先預覽渲染結果
+kubectl apply -k k8s/users/bob           # 單人上線
+kubectl apply -k k8s/users               # 批次同步全員</code></pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="d-mig">
+        <div class="code-block">
+          <div class="code-header"><span>Linux Server K8s — 安全非破壞式 PRO 6000 MIG 合併與 Seccomp 分發（絕不影響 H200/H100/A100/B300）</span><button class="copy-btn">複製</button></div>
+          <pre><code># 1. 先檢查全叢集 GPU 型號、現行 mig.strategy 與非破壞式預演（偵測到 H200/H100/A100/B300 會直接中止）
+chmod +x deploy/gpu-operator/apply-pro6000-mig-safe.sh
+./deploy/gpu-operator/apply-pro6000-mig-safe.sh --dry-run &lt;pro6000-node-1&gt;
+
+# 2. 確認零影響後正式套用（合併既有 ConfigMap 並僅標記 PRO 6000 節點）
+./deploy/gpu-operator/apply-pro6000-mig-safe.sh --apply &lt;pro6000-node-1&gt;
+
+# 3. 僅於 PRO 6000 節點放置靜態 Seccomp JSON（免重啟 kubelet / containerd）
+sudo mkdir -p /var/lib/kubelet/seccomp/profiles
+sudo cp charts/robotics-infra/files/podman-rootless-seccomp.json \
+  /var/lib/kubelet/seccomp/profiles/podman-rootless.json
+
+# 4. 僅於 PRO 6000 節點放行內網 UDP Mux 埠段（Ubuntu ufw 範例）
+sudo ufw allow proto udp from 10.0.0.0/8 to any port 50000:51000</code></pre>
+        </div>
+        <div class="callout warn">
+          <strong>Linux Server K8s 關鍵盲區檢查與單節點負荷（已預設無 CPU Node 集中於 PRO 6000）：</strong><br/>
+          • <strong>無 CPU 節點集中部署</strong>：<code>rosZenohHub.placement: "pro6000"</code> 與 <code>coturn</code> 均預設集中至 PRO 6000 節點並設 <code>NVIDIA_VISIBLE_DEVICES=void</code>（0 GPU 佔用，跨 Pod <code>ros-bridge hub</code> 流量 100% 走單節點內虛擬網橋 &lt;0.2ms）。<br/>
+          • <strong>網路開銷評估</strong>：CycloneDDS 鎖 <code>lo</code>（0 pps CNI 廣播）；<code>webrtc-udp-mux</code> 直出約 <code>12 Mbps</code>/人（單卡 3～4 人總計 <code>36–60 Mbps</code>，佔 10GbE &lt;0.6%，不衝擊 Ingress-NGINX 與訓練卡網段）。<br/>
+          • <strong>單張 PRO 6000 節點建議規格（3～4 人 + Hub）</strong>：<strong>CPU ≥ 32 vCPU</strong>（重度模擬建議 48–64 vCPU）、<strong>RAM ≥ 128 GiB</strong>（多 Isaac Sim 建議 192–256 GiB，含 <code>/dev/shm</code>）、<strong>NVMe SSD ≥ 1–1.5 TB</strong>、<code>podPidsLimit ≥ 4096</code>。<br/>
+          • <strong><code>mig.strategy: single</code> vs <code>mixed</code></strong>：若既有 H200/H100/A100/B300 已在 <code>single</code> 策略啟用 MIG，切勿改全叢集 <code>mig.strategy</code>；PRO 6000 改套 <code>all-2g.48gb.gfx</code> 並申請 <code>nvidia.com/gpu: 1</code>。<br/>
+          • <strong>Ubuntu 24.04 AppArmor / OPA</strong>：視需求啟用 <code>components/apparmor-unconfined</code> 與 <code>components/smarter-device-tun</code>。
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. Dev & Air-gap Sync -->
+    <section id="sec-dev" class="searchable">
+      <h2><span class="sec-num">8</span>容器內開發與離線內網同步</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h4>SSH over Ingress WebSocket（支援 VS Code Remote-SSH）</h4>
+          <div class="code-block">
+            <div class="code-header"><span>~/.ssh/config</span><button class="copy-btn">複製</button></div>
+            <pre><code>Host dio-robot
+  HostName dio.selkies.local
+  User ubuntu
+  ProxyCommand websocat --binary wss://%h/ssh
+  ServerAliveInterval 30</code></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>ROS 2 Jazzy + Python venv / pip</h4>
+          <div class="code-block">
+            <div class="code-header"><span>容器內終端機</span><button class="copy-btn">複製</button></div>
+            <pre><code>ros2 topic list
+python3 -m venv ~/venvs/sim &amp;&amp; source ~/venvs/sim/bin/activate
+pip install trimesh</code></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>方式 A：中繼機鏡像至內網私有 Registry</h4>
+          <div class="code-block">
+            <div class="code-header"><span>Harbor 推送</span><button class="copy-btn">複製</button></div>
+            <pre><code>docker pull fritingo/robot-infra:v2
+docker tag fritingo/robot-infra:v2 \
+  harbor.company.com/robotics/robot-infra:v2
+docker push harbor.company.com/robotics/robot-infra:v2</code></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>方式 B：實體離線打包匯入（Docker / Podman / ctr）</h4>
+          <div class="code-block">
+            <div class="code-header"><span>Tar 校驗匯入</span><button class="copy-btn">複製</button></div>
+            <pre><code>docker save fritingo/robot-infra:v2 -o robot-infra-v2.tar
+sha256sum robot-infra-v2.tar &gt; robot-infra-v2.tar.sha256
+# 內網校驗後三擇一匯入：
+docker load -i robot-infra-v2.tar
+podman load -i robot-infra-v2.tar
+sudo ctr -n k8s.io images import robot-infra-v2.tar</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. Security Baseline -->
+    <section id="sec-security" class="searchable">
+      <h2><span class="sec-num">9</span>生產安全基線與客製 Seccomp</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>安全控制面向</th><th>配置細節</th><th>防禦效果</th></tr></thead>
+          <tbody>
+            <tr><td><strong>非 Root 執行</strong></td><td><code>USER ubuntu</code>、<code>runAsUser/runAsGroup/fsGroup: 1000</code></td><td>與 X11 <code>MIT-SHM</code>、PipeWire-Pulse 及個人 PVC 權限完全對齊</td></tr>
+            <tr><td><strong>零特權與命名空間隔離</strong></td><td><code>privileged: false</code>、<code>hostNetwork/PID/IPC: false</code></td><td>阻斷直接操作宿主裝置與行程</td></tr>
+            <tr><td><strong>6 項最小 Capabilities</strong></td><td><code>drop: ["ALL"]</code> + <code>SETUID</code>, <code>SETGID</code>, <code>CHOWN</code>, <code>FOWNER</code>, <code>DAC_OVERRIDE</code>, <code>AUDIT_WRITE</code></td><td>移除 <code>SYS_ADMIN</code> / <code>NET_RAW</code> / <code>SYS_PTRACE</code>，僅留 <code>sudo</code> 與 <code>sshd</code> 必需權限</td></tr>
+            <tr><td><strong>客製 Localhost Seccomp</strong></td><td><code>podman-rootless-seccomp.json</code>（封鎖 45 高危 syscall）</td><td>封鎖 <code>bpf</code>、<code>io_uring_*</code>、<code>ptrace</code>、<code>kexec_load</code>、<code>keyctl</code>、<code>init_module</code> 等核心攻擊面</td></tr>
+            <tr><td><strong>NetworkPolicy &amp; LimitRange</strong></td><td>由 <code>charts/robotics-infra</code> 統一管控</td><td>禁止跨使用者 Pod 橫向互連、封鎖 <code>169.254.169.254/32</code>、限制單容器上限 32C/128Gi</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 10. CVE Report -->
+    <section id="sec-cve" class="searchable">
+      <h2><span class="sec-num">10</span>Trivy CVE 漏洞掃描與修補報告</h2>
+      <p>
+        <code>fritingo/robot-infra:v2</code>（已推送 <code>sha256:804d53b0c0be4d83fec0a9b60303290fd9e1165c7de59ece58094fb1f2889cf8</code>）經
+        <code>aquasec/trivy</code> 掃描並完成修補：全面升級 Ubuntu 24.04 與 ROS 2 Jazzy 安全更新（含 <code>linux-libc-dev 6.8.0-151.151</code>、<code>apt</code>、<code>sudo</code>）、移除未使用之 <code>ipp-usb</code>（77 Go CVEs）與 <code>nginx</code>/<code>apache2-utils</code>（9 HIGH CVEs）、升級 <code>pillow 13.0.0</code> / <code>msgpack 1.2.4</code> 及 <code>yq v4.54.3</code>。
+      </p>
+
+      <div class="grid-4" style="margin-bottom:16px">
+        <div class="card"><h4>可修補 CRITICAL</h4><div class="metric green">71 → 0</div><p>100% 清零（總計 83 → 12）</p></div>
+        <div class="card"><h4>實質可修補 HIGH</h4><div class="metric green">1,104 → 0*</div><p>99.82% 降幅（*2 項 Firefox 誤報）</p></div>
+        <div class="card"><h4>Python 套件 CVE</h4><div class="metric green">44 → 0</div><p><code>pillow 13.0.0</code> + <code>msgpack 1.2.4</code></p></div>
+        <div class="card"><h4>Go 二進位 CVE</h4><div class="metric green">113 → 1</div><p>移除 <code>ipp-usb</code>、升級 <code>yq v4.54.3</code></p></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <h4>修補前後可修補（Fixable）漏洞降幅</h4>
+        <div class="bar-row"><div class="bar-label"><span>CRITICAL 可修補（71 → 0）</span><span style="color:var(--green)">-100%</span></div><div class="bar-track"><div class="bar-fill" style="width:1%;background:var(--green)"></div></div></div>
+        <div class="bar-row"><div class="bar-label"><span>HIGH 可修補（1,104 → 2* Firefox 誤報）</span><span style="color:var(--green)">-99.82%</span></div><div class="bar-track"><div class="bar-fill" style="width:0.5%;background:var(--green)"></div></div></div>
+        <div class="bar-row"><div class="bar-label"><span>MEDIUM 可修補（2,537 → 23：1 項 yq + 22 項 Firefox 誤報）</span><span style="color:var(--green)">-99.09%</span></div><div class="bar-track"><div class="bar-fill" style="width:1%;background:var(--accent)"></div></div></div>
+        <div class="bar-row"><div class="bar-label"><span>LOW 可修補（1,875 → 1* Firefox 誤報）</span><span style="color:var(--green)">-99.95%</span></div><div class="bar-track"><div class="bar-fill" style="width:0.3%;background:var(--accent)"></div></div></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>剩餘套件 / 目標</th><th>安裝版本</th><th>等級與數量</th><th>合規審查與 VEX 說明</th></tr></thead>
+          <tbody>
+            <tr><td><code>firefox</code></td><td><code>161.0+build1~mt1</code></td><td><span class="pill high">HIGH ×2</span> <span class="pill med">MED ×22</span> <span class="pill low">LOW ×1</span></td><td><span class="pill ok">Epoch 誤報</span> Mozilla PPA 無 epoch 與 Ubuntu Snap stub (<code>1:1snap1</code>) 比對失真（2021–2022 舊 CVE 如 <code>CVE-2022-25235/25236</code>），實際為最新 Firefox 161。</td></tr>
+            <tr><td><code>/usr/bin/yq</code></td><td><code>v4.54.3</code></td><td><span class="pill med">MED ×1</span></td><td><code>CVE-2026-97054</code>（Go <code>1.27.3→1.27.4</code>），已是最新官方釋出，待上游發布新版即可透過 <code>ARG YQ_VERSION</code> 升級。</td></tr>
+            <tr><td><code>linux-libc-dev</code></td><td><code>6.8.0-151.151</code></td><td><span class="pill crit">CRIT ×12</span> <span class="pill high">HIGH ×152</span></td><td>上游 Ubuntu 24.04 尚未提供修補；本套件僅為 <code>colcon build</code> 用 C 標頭檔（非執行中核心）。</td></tr>
+            <tr><td><code>qt5webengine</code> / <code>webkit2gtk</code> / <code>gstreamer-bad</code></td><td>Ubuntu 24.04 最新版</td><td><span class="pill high">HIGH ×14</span></td><td>對應 <code>CVE-2025-9900</code>、<code>CVE-2026-3909</code>、<code>CVE-2025-3887</code>，尚無上游修補，建議納入正式 VEX 例外紀錄。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 11. FAQ -->
+    <section id="sec-faq" class="searchable">
+      <h2><span class="sec-num">11</span>常見問題排解（Troubleshooting）</h2>
+      <details open>
+        <summary>Web 桌面連線黑畫面或 WebRTC 持續轉圈？</summary>
+        <div class="details-body">1. 確認防火牆放行辦公電腦至 GPU Worker Node 的 UDP 埠段（<code>50000-51000</code>）。<br/>2. 可先於 Selkies 網頁側邊欄切至 <strong>WebSockets</strong> 模式立即驗證。<br/>3. 確認 <code>robotics</code> Namespace 存在 <code>selkies-airgap-rtc-config</code> ConfigMap。</div>
+      </details>
+      <details>
+        <summary>Podman 報 <code>cannot clone</code> 或 <code>create keyring: Operation not permitted</code>？</summary>
+        <div class="details-body">確認節點 <code>/var/lib/kubelet/seccomp/profiles/podman-rootless.json</code> 已分發並啟用 <code>components/seccomp-podman-localhost</code>（Ubuntu 24.04 AppArmor 限制請一併啟用 <code>components/apparmor-unconfined</code>），且 <code>config/containers.conf</code> 維持 <code>keyring = false</code> 與 <code>default_sysctls = []</code>。</div>
+      </details>
+      <details>
+        <summary>Podman 報 <code>fuse: device not found</code>？</summary>
+        <div class="details-body">確認 <code>/home/ubuntu/.local/share/containers</code> 已獨立掛載實體 ext4/xfs PVC（<code>selkies-podman-pvc</code>）或本機 Docker Volume，避免 overlay-on-overlay。</div>
+      </details>
+      <details>
+        <summary><code>launch-isaac-sim</code> 報找不到 NVIDIA Vulkan 裝置？</summary>
+        <div class="details-body">請確認 Pod 申請的是 RTX PRO 6000 <strong><code>+gfx</code> MIG Profile</strong>（含 RT Cores 與渲染引擎）且環境變數已注入 <code>NVIDIA_DRIVER_CAPABILITIES=all</code>。</div>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      document.getElementById("themeToggle").addEventListener("click", () => {
+        root.setAttribute("data-theme", root.getAttribute("data-theme") === "light" ? "dark" : "light");
+      });
+
+      // Tabs (scoped to parent section)
+      document.querySelectorAll(".tabs").forEach((group) => {
+        const btns = group.querySelectorAll(".tab-btn");
+        const parent = group.parentElement;
+        btns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const target = btn.getAttribute("data-tab");
+            btns.forEach((b) => b.classList.toggle("active", b === btn));
+            parent.querySelectorAll(":scope > .tab-panel").forEach((p) => {
+              p.classList.toggle("active", p.getAttribute("data-panel") === target);
+            });
+          });
+        });
+      });
+
+      // Live filter inside Section 5 Parameter Explorer (searches across all 5 tabs!)
+      const paramFilter = document.getElementById("paramFilter");
+      const paramCount = document.getElementById("paramCount");
+      const paramSection = document.getElementById("sec-params");
+      const paramPanels = Array.from(paramSection.querySelectorAll(":scope > .tab-panel"));
+      const paramTabBtns = Array.from(document.querySelectorAll("#paramTabs .tab-btn"));
+
+      function applyParamFilter() {
+        const q = paramFilter.value.trim().toLowerCase();
+        let matched = 0;
+        let total = 0;
+        paramPanels.forEach((panel, idx) => {
+          let panelHits = 0;
+          panel.querySelectorAll(".param-table tbody tr").forEach((row) => {
+            total++;
+            const hit = !q || row.innerText.toLowerCase().includes(q);
+            row.classList.toggle("hidden-row", !hit);
+            if (hit) { matched++; panelHits++; }
+          });
+          if (q) {
+            panel.classList.toggle("active", panelHits > 0);
+            paramTabBtns[idx].style.opacity = panelHits > 0 ? "1" : "0.4";
+          } else {
+            paramTabBtns[idx].style.opacity = "1";
+          }
+        });
+        if (!q) {
+          const activeBtn = paramTabBtns.find((b) => b.classList.contains("active")) || paramTabBtns[0];
+          const target = activeBtn.getAttribute("data-tab");
+          paramPanels.forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === target));
+          paramCount.textContent = `共 ${total} 項可控參數`;
+        } else {
+          paramCount.textContent = `符合 ${matched} / ${total} 項參數（已自動展開命中分頁）`;
+        }
+      }
+      paramFilter.addEventListener("input", applyParamFilter);
+      applyParamFilter();
+
+      // Copy code buttons
+      document.querySelectorAll(".copy-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const code = btn.closest(".code-block").querySelector("pre").innerText;
+          const done = () => {
+            const old = btn.textContent;
+            btn.textContent = "已複製 ✓";
+            setTimeout(() => (btn.textContent = old), 1500);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(done);
+          } else {
+            const ta = document.createElement("textarea");
+            ta.value = code;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+            done();
+          }
+        });
+      });
+
+      // Global section search
+      const searchInput = document.getElementById("searchInput");
+      const sections = Array.from(document.querySelectorAll("section.searchable"));
+      searchInput.addEventListener("input", () => {
+        const q = searchInput.value.trim().toLowerCase();
+        sections.forEach((sec) => {
+          sec.classList.toggle("hidden-by-search", !!q && !sec.innerText.toLowerCase().includes(q));
+        });
+      });
+
+      // Scroll-spy
+      const navLinks = Array.from(document.querySelectorAll(".nav-list a"));
+      const onScroll = () => {
+        let currentId = sections[0]?.id || "";
+        for (const sec of sections) {
+          if (sec.classList.contains("hidden-by-search")) continue;
+          if (sec.getBoundingClientRect().top <= 110) currentId = sec.id;
+        }
+        navLinks.forEach((a) => a.classList.toggle("active", a.getAttribute("href") === "#" + currentId));
+      };
+      window.addEventListener("scroll", onScroll, { passive: true });
+      onScroll();
+    })();
+  </script>
+</body>
+</html>

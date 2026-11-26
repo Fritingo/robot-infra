@@ -4,7 +4,8 @@
 
 本專案提供一套專為**完全離線純內網（Air-Gapped）**、**單一 Ingress IP 受限環境**與**多型號 GPU 混部叢集（共存 H200 / H100 / A100 / B300，嚴格僅觸及 RTX PRO 6000）**設計的 Kubernetes 多使用者機器人開發平台。
 
-> 完整圖解、互動式架構拓撲與可即時篩選之全參數字典，請直接以瀏覽器離線開啟 [project-overview.html](./project-overview.html)（純單檔 HTML，零外部 CDN 依賴）。
+> 線上互動式專案架構與全參數說明頁（GitHub Pages）：**https://fritingo.github.io/robot-infra/**
+> 離線環境亦可直接以瀏覽器開啟 [project-overview.html](./project-overview.html) 或 [docs/index.html](./docs/index.html)（純單檔 HTML，零外部 CDN 依賴）。
 
 ---
 
