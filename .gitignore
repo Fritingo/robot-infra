@@ -25,7 +25,9 @@ restore*.sh
 *.secret.yml
 kubeconfig*
 
-# OS / Editor artifacts
+# OS / Editor / Python bytecode artifacts
+__pycache__/
+*.pyc
 .DS_Store
 Thumbs.db
 *.swp
