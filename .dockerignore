@@ -3,12 +3,15 @@
 *.zip
 v1_parts/
 v2_parts/
+v3_parts/
+v4_parts/
 parts_*/
 _tmp_build_ctx/
 .tmp-*
 coturn/
 charts/
 deploy/
+docs/
 k8s/
 push_chunks*.ps1
 restore*.sh

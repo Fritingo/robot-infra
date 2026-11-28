@@ -5,7 +5,7 @@
 image:
   # 請替換為你們內網私有 Registry（例如 harbor.internal/robotics/robot-infra）
   repository: "registry.local/robotics/robot-infra"
-  tag: "v3"
+  tag: "v4"
   pullPolicy: IfNotPresent
   # 若內網 Registry 需要認證，於 robotics Namespace 建立 docker-registry Secret 後填入：
   pullSecrets: []

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Robot-Infra v3 — 純內網多使用者 GPU 機器人開發平台完整技術與參數手冊</title>
+  <title>Robot-Infra v4 — 純內網多使用者 GPU 機器人開發平台完整技術與參數手冊（生產強化版）</title>
   <style>
     :root {
       --bg: #0b1020;
@@ -419,7 +419,7 @@
     <div class="brand">
       <div class="brand-logo">RI</div>
       <div>
-        <div class="brand-title">Robot-Infra v3</div>
+        <div class="brand-title">Robot-Infra v4</div>
         <div class="brand-sub">完整技術架構與參數參考手冊</div>
       </div>
     </div>
@@ -461,16 +461,17 @@
 
   <main class="main">
     <div class="hero">
-      <h1>Robot-Infra v3 — 純內網多使用者 GPU 機器人開發平台</h1>
+      <h1>Robot-Infra v4 — 純內網多使用者 GPU 機器人開發平台（生產強化版）</h1>
       <p>
-        專為<strong>無外網連線（Air-Gapped）</strong>、<strong>單一 Ingress IP 受限環境</strong>與<strong>多型號 GPU 混部叢集（共存 H200 / H100 / A100 / B300，嚴格僅觸及 RTX PRO 6000）</strong>打造。
-        整合 Selkies v2.2.1 EGL Desktop、ROS 2 Jazzy + MoveIt 2 + <strong>預設 CycloneDDS（lo 直通 Podman/Docker）</strong>、<strong>跨 Pod <code>ros-bridge</code>（Ingress <code>/zenoh</code> WSS + 選配純 CPU Hub）</strong>、無特權 Rootless Podman 與共用唯讀 Isaac Sim 6.2。
+        專為<strong>無外網連線（Air-Gapped）</strong>、<strong>單一 Ingress IP 受限環境</strong>與<strong>多型號 GPU 混部叢集（共存 H200 / H100 / A100 / B300，嚴格僅觸及 RTX PRO 6000 且更新絕不中斷既有服務）</strong>打造。
+        整合 Selkies v2.2.1 EGL Desktop、ROS 2 Jazzy + MoveIt 2 + <strong>預設 CycloneDDS（lo 直通 Podman/Docker）</strong>、<strong>跨 Pod <code>ros-bridge</code>（Ingress <code>/zenoh</code> Basic Auth WSS + 零中斷 Hub）</strong>、無特權 Rootless Podman、<strong>Prometheus + Grafana 全棧監控</strong>與共用唯讀 Isaac Sim 6.2。
       </p>
       <div class="badge-row">
-        <span class="badge info">Image: fritingo/robot-infra:v3</span>
-        <span class="badge purple">Bundle: fritingo/robot-infra:v3-bundle</span>
-        <span class="badge ok">PRO 6000 專屬鎖定・零影響 H200/H100/A100/B300</span>
-        <span class="badge ok">預設 CycloneDDS + Ingress /zenoh 跨 Pod 橋接</span>
+        <span class="badge info">Image: fritingo/robot-infra:v4</span>
+        <span class="badge purple">Bundle: fritingo/robot-infra:v4-bundle</span>
+        <span class="badge ok">PRO 6000 專屬鎖定・原地 MIG 免改 ClusterPolicy</span>
+        <span class="badge ok">預設 CycloneDDS + Ingress /zenoh Basic Auth</span>
+        <span class="badge ok">Prometheus + 22 面板離線 Grafana</span>
         <span class="badge ok">可修補 CRITICAL / HIGH CVE：0</span>
       </div>
     </div>
@@ -501,28 +502,29 @@
         </div>
       </div>
 
-      <h3>從 Docker Hub 拉取專案壓縮包（<code>fritingo/robot-infra:v3-bundle</code>）</h3>
+      <h3>從 Docker Hub 拉取專案壓縮包（<code>fritingo/robot-infra:v4-bundle</code>）</h3>
       <div class="code-block">
-        <div class="code-header"><span>Docker / Podman 取出 robot-infra-v3-bundle.zip 並驗證 SHA256</span><button class="copy-btn">複製</button></div>
-        <pre><code>docker pull fritingo/robot-infra:v3-bundle
-CID=$(docker create fritingo/robot-infra:v3-bundle)
-docker cp "${CID}:/opt/bundle/robot-infra-v3-bundle.zip" ./robot-infra-v3-bundle.zip
+        <div class="code-header"><span>Docker / Podman 取出 robot-infra-v4-bundle.zip 並驗證 SHA256</span><button class="copy-btn">複製</button></div>
+        <pre><code>docker pull fritingo/robot-infra:v4-bundle
+CID=$(docker create fritingo/robot-infra:v4-bundle)
+docker cp "${CID}:/opt/bundle/robot-infra-v4-bundle.zip" ./robot-infra-v4-bundle.zip
 docker cp "${CID}:/opt/bundle/SHA256SUMS" ./SHA256SUMS
 docker rm -f "$CID" >/dev/null
 
 sha256sum -c SHA256SUMS
-unzip robot-infra-v3-bundle.zip -d robot-infra-v3</code></pre>
+unzip robot-infra-v4-bundle.zip -d robot-infra-v4</code></pre>
       </div>
 
-      <h3>v3 核心架構保證：零宿主機影響・零全叢集異動・僅涉及 RTX PRO 6000</h3>
+      <h3>v4 生產強化更新與核心保證：零中斷維運・零全叢集異動・僅涉及 RTX PRO 6000</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>隔離面向</th><th>v3 實作機制</th><th>保證結果</th></tr></thead>
+          <thead><tr><th>隔離與防護面向</th><th>v4 生產強化實作機制</th><th>保證結果</th></tr></thead>
           <tbody>
-            <tr><td><strong>跨 Pod ROS 2（免查 K8s svc）</strong></td><td>Pod 內預設 <code>rmw_cyclonedds_cpp</code> 綁定 <code>lo</code> 直通 <code>mig-podman</code>/Docker；跨 Pod 經單一 Ingress <code>wss://&lt;user&gt;.selkies.local/zenoh</code>（<code>:7448→7447</code>）或純 CPU <code>zenoh-hub</code> + <code>ros-bridge</code> CLI</td><td>零額外 IP、零 DDS multicast 外洩、使用者完全不需 <code>kubectl get svc</code></td></tr>
-            <tr><td><strong>嚴格僅排程 RTX PRO 6000</strong></td><td>三重硬體鎖定：<code>nodeSelector</code>（<code>robot-infra/gpu-pool: rtx-pro-6000</code> + <code>gpu.capability/rtx-gfx: "true"</code>）+ <code>nodeAffinity</code> <code>NotIn</code> 排除全部 <code>A100/H100/H200/B200/B300/GB200/GB300</code> + <code>+gfx</code> MIG 資源；無 CPU 節點時 <code>zenoh-hub</code> 與 <code>coturn</code> 亦集中至 PRO 6000 節點並設 <code>NVIDIA_VISIBLE_DEVICES=void</code>（佔 0 GPU）</td><td><strong>無 CPU 節點亦可直接部署，且絕對不會碰觸 H200 / H100 / A100 / B300 訓練節點</strong></td></tr>
-            <tr><td><strong>非破壞式 MIG 合併</strong></td><td><code>deploy/gpu-operator/apply-pro6000-mig-safe.sh</code> 先驗證節點 GPU 型號（命中 H200/H100/A100/B300 立即中止），再合併叢集既有 <code>default-mig-parted-config</code></td><td>完整保留既有訓練卡的所有 MIG Profile</td></tr>
-            <tr><td><strong>零 Host OS 與全叢集污染</strong></td><td>100% Namespace-scoped（<code>robotics</code>），零 <code>ClusterRole</code>/<code>CRD</code>/<code>Webhook</code>；<code>privileged: false</code>、<code>hostNetwork/PID/IPC: false</code>、6 項最小 Capabilities、客製 Seccomp</td><td>不改動宿主機核心／網路／sysctl，不更動其他 Namespace 或 Ingress Controller 全域旗標</td></tr>
+            <tr><td><strong>零中斷更新與單人生命週期</strong></td><td><code>deploy/manage-user.sh</code> 強制單人獨立上線（<code>apply &lt;user&gt;</code>）、每位使用者獨立釘選映像標籤、自動生成 24 字元強密碼並攔截弱密碼；支援 <code>hibernate</code>/<code>wake</code> 縮容釋放 MIG 且保留 PVC；<code>zenoh-hub</code> 採 <code>maxUnavailable: 0</code> 滾動升級</td><td><strong>任何更新絕不導致其他在線開發者或既有服務中斷</strong></td></tr>
+            <tr><td><strong>原地非破壞式 MIG 與線上防切卡</strong></td><td><code>apply-pro6000-mig-safe.sh</code> 預設原地備份並更新既有 ConfigMap（<strong>完全不修改 <code>ClusterPolicy</code></strong>），且切卡前自動檢查節點是否有 Running 桌面 Pod（有則中止）</td><td>H200 / H100 / A100 / B300 上的 <code>nvidia-mig-manager</code> <strong>100% 零重載</strong>，且不會誤重置線上用戶 GPU</td></tr>
+            <tr><td><strong>跨 Pod ROS 2 + <code>/zenoh</code> Basic Auth</strong></td><td>Pod 內預設 <code>rmw_cyclonedds_cpp</code> 綁定 <code>lo</code> 直通 <code>mig-podman</code>；跨 Pod 經 <code>wss://&lt;user&gt;.selkies.local/zenoh</code>（v4 內建 <code>zenoh-ws-auth-proxy.py</code> 在握手前強制驗證 Basic Auth）</td><td>零額外 IP、0 pps DDS 外洩、杜絕未授權跨 Pod 存取 ROS 2 Topic</td></tr>
+            <tr><td><strong>嚴格僅排程 RTX PRO 6000</strong></td><td>三重硬體鎖定：<code>nodeSelector</code> + <code>nodeAffinity</code> <code>NotIn(A100/H100/H200/B200/B300/GB200/GB300)</code> + <code>+gfx</code> MIG；無 CPU 節點時基礎服務設 <code>NVIDIA_VISIBLE_DEVICES=void</code>（佔 0 GPU）</td><td><strong>無純 CPU 節點亦可直接部署，且絕不碰觸任何訓練卡節點</strong></td></tr>
+            <tr><td><strong>防搶核、日誌輪替與共用 Ingress 保護</strong></td><td>預設 <code>CMAKE_BUILD_PARALLEL_LEVEL=4</code> 防編譯搶核掉幀；<code>/api/health</code> HTTP 探針 + <code>preStop</code> 優雅停機；<code>ephemeral-storage</code> 配額 + Supervisor <code>10MB</code> 日誌輪替；Ingress <code>proxy-body-size: 4g</code></td><td>防止單人撐爆節點磁碟、編譯卡頓或拖慢公司共用 Ingress-NGINX</td></tr>
           </tbody>
         </table>
       </div>
@@ -803,8 +805,11 @@ SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
               <tr><td><code>XDG_RUNTIME_DIR</code></td><td><code>/tmp/runtime-ubuntu</code></td><td>PipeWire / PulseAudio runtime 目錄</td></tr>
               <tr><td><code>NVIDIA_DRIVER_CAPABILITIES</code></td><td><code>all</code></td><td>啟用完整圖形、Vulkan/EGL、NVENC 與 CUDA 能力</td></tr>
               <tr><td><code>ROS_DOMAIN_ID</code></td><td><code>11</code></td><td>ROS 2 隔離網域 ID（建議每位開發者獨立編號；透過 <code>ros-bridge</code> 亦可跨不同 Domain 互通）</td></tr>
-              <tr><td><code>RMW_IMPLEMENTATION</code></td><td><code>rmw_cyclonedds_cpp</code></td><td>v3 預設 CycloneDDS（綁定 <code>lo</code> 直接與內層 <code>mig-podman</code>/Docker 互通；亦保留 <code>rmw_zenoh_cpp</code> 可隨時切換）</td></tr>
+              <tr><td><code>RMW_IMPLEMENTATION</code></td><td><code>rmw_cyclonedds_cpp</code></td><td>v4 預設 CycloneDDS（綁定 <code>lo</code> 直接與內層 <code>mig-podman</code>/Docker 互通；亦保留 <code>rmw_zenoh_cpp</code> 可隨時切換）</td></tr>
               <tr><td><code>CYCLONEDDS_URI</code></td><td><code>file:///etc/ros/cyclonedds.xml</code></td><td>鎖定 <code>lo</code> + <code>Peer 127.0.0.1</code>，零 multicast 外洩至宿主機或 K8s CNI，並由 <code>mig-podman</code> 自動唯讀掛載</td></tr>
+              <tr><td><code>ZENOH_WS_AUTH_ENABLED</code></td><td><code>auto</code>（隨 Basic Auth 開啟）</td><td>v4 新增：在 <code>:7448</code>（Ingress <code>/zenoh</code>）強制驗證個人 Basic Auth，未帶帳密直接回 <code>401</code></td></tr>
+              <tr><td><code>CMAKE_BUILD_PARALLEL_LEVEL</code> / <code>MAKEFLAGS</code></td><td><code>4</code> / <code>-j4</code></td><td>v4 新增：限制預設平行編譯執行緒數，防止單人 <code>colcon build</code> 搶滿全機核心導致同卡使用者桌面掉幀</td></tr>
+              <tr><td><code>SSH_AUTHORIZED_KEYS</code> / <code>SSH_DISABLE_PASSWORD_AUTH</code></td><td>（未設定）/ <code>false</code></td><td>v4 新增：支援預先自動注入公鑰至 <code>~/.ssh/authorized_keys</code> 並可選配停用 SSH 密碼登入</td></tr>
               <tr><td><code>ROS_BRIDGE_HUB_ENDPOINT / WSS_URL / AUTH</code></td><td>（由 <code>cross-pod-ros</code> 注入）</td><td>供 <code>ros-bridge hub / connect</code> 自動連線叢集共用 Hub 或帶 Basic Auth 之 Ingress <code>/zenoh</code>（免查 K8s svc）</td></tr>
               <tr><td><code>ZENOH_ROUTER_CHECK_ATTEMPTS</code></td><td><code>5</code></td><td>切換回純 <code>rmw_zenoh_cpp</code> 時探測本機 <code>zenohd</code>（<code>127.0.0.1:7447</code>）的重試次數</td></tr>
               <tr><td><code>ZENOH_CONFIG_OVERRIDE</code></td><td>SHM 256MB</td><td>開啟 <code>transport/shared_memory/enabled=true</code> 與 256MB 共享記憶體池</td></tr>
@@ -834,6 +839,7 @@ SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
               <tr><td><code>limitRange.enabled</code></td><td><code>true</code></td><td>啟用單容器資源防呆上下限</td></tr>
               <tr><td><code>limitRange.maxCpu / maxMemory</code></td><td><code>32</code> / <code>128Gi</code></td><td>單容器上限，防止單人 YAML 吃滿整台節點</td></tr>
               <tr><td><code>limitRange.defaultRequest* / defaultLimit*</code></td><td><code>2C/8Gi</code> / <code>8C/32Gi</code></td><td>未填資源限制時的預設請求與上限</td></tr>
+              <tr><td><code>resourceQuota.enabled / hard.*</code></td><td><code>false</code>（<code>64C / 256Gi / 30 PVCs</code>）</td><td>v4 新增：選配 Namespace 總配額上限，防止誤建過多開發者卡住整台 PRO 6000 排程</td></tr>
               <tr><td><code>coturn.enabled</code></td><td><code>false</code></td><td>隔離私網需中繼時改 <code>true</code> 部署共用 Coturn</td></tr>
               <tr><td><code>coturn.image.repository / tag</code></td><td><code>registry.local/robotics/coturn:4.6.2-alpine-patched</code></td><td>內網私有 Coturn 映像檔（可用 <code>coturn/Dockerfile</code> 自建）</td></tr>
               <tr><td><code>coturn.nodeSelector</code></td><td><code>robot-infra/gpu-pool: rtx-pro-6000</code></td><td>無純 CPU 節點時預設集中於 PRO 6000 節點（<code>NVIDIA_VISIBLE_DEVICES=void</code> 佔 0 GPU，排除 H200/H100/A100/B300）</td></tr>
@@ -898,6 +904,7 @@ SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
               <tr><td><code>ingress.*</code></td><td><code>routingMode</code> (<code>subdomain</code> | <code>subfolder</code>), <code>baseDomain</code>, <code>host</code>, <code>tls.secretName</code></td><td><strong><code>subfolder</code> 模式免 Wildcard DNS</strong>（單一域名 <code>/user/</code> 與 <code>/user/ssh</code> 分流）</td></tr>
               <tr><td><code>ssh.*</code></td><td><code>enabled</code>, <code>mode</code> (<code>ingress-ws</code>|<code>tcp-ingress</code>), <code>sshdPort: 2222</code>, <code>wsBridgePort: 2223</code>, <code>ingressPath: "/ssh"</code></td><td>控制 SSH 隧道方式與路徑</td></tr>
               <tr><td><code>storage.*</code> &amp; <code>podman.*</code></td><td><code>personalPvc.*</code>, <code>sharedIsaacPvc.*</code>, <code>sharedIsaacAssetsPvc.*</code>, <code>podman.{enabled, mountTun, storage.*}</code></td><td>階段式開啟個人 PVC、唯讀 Isaac Sim PVC 與 Rootless Podman PVC</td></tr>
+              <tr><td><code>deploy/manage-user.sh</code></td><td><code>preflight | create | apply | hibernate | wake | status</code></td><td>★ v4 生產維運首選：一鍵 6 點環境預檢、強密碼建立用戶、單人無縫更新（零波及他人）、閒置縮容釋放 MIG 切片</td></tr>
               <tr><td><code>deploy/deploy.sh</code></td><td><code>./deploy/deploy.sh &lt;user|--all&gt; [extra helm flags]</code>（支援 <code>NAMESPACE=</code>）</td><td>自動合併 <code>deploy/shared-defaults.yaml</code> 與 <code>deploy/users/&lt;user&gt;.yaml</code></td></tr>
             </tbody>
           </table>
@@ -1046,18 +1053,36 @@ supervisorctl tail -f sshd stderr</code></pre>
     <section id="sec-deploy" class="searchable">
       <h2><span class="sec-num">7</span>完整部署步驟（本機測試・Helm Infra・Kustomize 使用者）</h2>
       <div class="tabs">
-        <button class="tab-btn active" data-tab="d-local">1. 本機 Docker 測試</button>
+        <button class="tab-btn active" data-tab="d-preflight">0. 生產上線前 6 大必確認</button>
+        <button class="tab-btn" data-tab="d-local">1. 本機 Docker 測試</button>
         <button class="tab-btn" data-tab="d-infra">2. K8s Infra（Helm）</button>
-        <button class="tab-btn" data-tab="d-user">3. 新增使用者（kubectl apply -k）</button>
-        <button class="tab-btn" data-tab="d-mig">4. MIG、Seccomp 與 OPA 前置</button>
+        <button class="tab-btn" data-tab="d-user">3. 使用者管理（manage-user.sh）</button>
+        <button class="tab-btn" data-tab="d-mig">4. MIG、Seccomp 與負荷規劃</button>
         <button class="tab-btn" data-tab="d-mon">5. Prometheus &amp; Grafana 監控</button>
       </div>
 
-      <div class="tab-panel active" data-panel="d-local">
+      <div class="tab-panel active" data-panel="d-preflight">
+        <div class="callout warn" style="margin-bottom:14px">
+          <strong>推上生產前需要跟維運確認的 6 個環境問題（純唯讀檢查，零叢集修改）：</strong><br/>
+          1. <strong>GPU Operator 現況</strong>：現行 <code>ClusterPolicy</code> 的 <code>mig.strategy</code> 是 <code>mixed</code> 還是 <code>single</code>？PRO 6000 節點是否有設 Taint（如 <code>nvidia.com/gpu=present:NoSchedule</code>，有的話需補 <code>tolerations</code>）？驅動是否為 R570+？<br/>
+          2. <strong>StorageClass 種類</strong>：叢集提供哪一個支援硬體 Quota 的區塊型 StorageClass（如 <code>ceph-rbd</code>、<code>longhorn</code>、<code>topolvm</code> 或 <code>local-path</code>）？有無獨立 NFS / CephFS 供唯讀掛載 Isaac Sim 6.2？<br/>
+          3. <strong>共用 Ingress-NGINX 規範</strong>：現有 Ingress Controller 名稱是否為 <code>nginx</code>？是否允許 WebSocket 長連線與 Basic Auth（v4 個人 <code>/zenoh</code> 已於容器內建 Basic Auth 代理，共用 Hub Ingress 才用到 <code>auth-type: basic</code>）？Wildcard DNS 與 TLS 憑證是否已備妥？<br/>
+          4. <strong>叢集資安門檻（PSA / OPA / AppArmor）</strong>：PRO 6000 節點是否為 Ubuntu 24.04（決定是否必開 <code>components/apparmor-unconfined</code>）？OPA / Kyverno 是否允許 <code>robotics</code> 使用 UDP <code>hostPort</code>（<code>50001..50050</code>）與 <code>/dev/net/tun</code> <code>hostPath</code>（禁止則改開 <code>transport-websockets</code> 與 <code>smarter-device-tun</code>）？<br/>
+          5. <strong><code>kube-prometheus-stack</code> 選擇器標籤</strong>：生產 Prometheus 的 <code>serviceMonitorSelector</code> 需要帶什麼特定 Label（常見如 <code>release: kube-prometheus-stack</code>）才能自動收錄我們的 <code>ServiceMonitor</code> 與 <code>PrometheusRule</code>？<br/>
+          6. <strong>單台 PRO 6000 伺服器實體規格</strong>：預計一張 96GB PRO 6000 切給幾位使用者同時在線？節點 CPU 核心數（建議 ≥32C）、實體 RAM（建議 ≥128GiB）與 <code>kubelet</code> 的 <code>podPidsLimit</code>（建議 <code>&gt;= 4096</code>）為何？
+        </div>
         <div class="code-block">
-          <div class="code-header"><span>Linux Bash — 含最小 6 項 Capabilities、客製 Seccomp、Podman 與 /zenoh 埠</span><button class="copy-btn">複製</button></div>
-          <pre><code>docker rm -f test-selkies-v3 2>/dev/null || true
-docker run -d --name test-selkies-v3 \
+          <div class="code-header"><span>一鍵執行生產 Linux K8s 唯讀環境檢核（一次核對上述 6 點）</span><button class="copy-btn">複製</button></div>
+          <pre><code>chmod +x deploy/manage-user.sh
+./deploy/manage-user.sh preflight</code></pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="d-local">
+        <div class="code-block">
+          <div class="code-header"><span>Linux Bash — 含最小 6 項 Capabilities、客製 Seccomp、Podman 與 /zenoh Basic Auth 埠</span><button class="copy-btn">複製</button></div>
+          <pre><code>docker rm -f test-selkies-v4 2>/dev/null || true
+docker run -d --name test-selkies-v4 \
   --gpus all --shm-size=4g \
   --cap-drop=ALL \
   --cap-add=SETUID --cap-add=SETGID --cap-add=CHOWN \
@@ -1073,10 +1098,10 @@ docker run -d --name test-selkies-v3 \
   -e SELKIES_BASIC_AUTH_PASSWORD="TestPassword123!" \
   -e SELKIES_MODE="websockets" \
   -e ROS_DOMAIN_ID="11" \
-  fritingo/robot-infra:v3</code></pre>
+  fritingo/robot-infra:v4</code></pre>
         </div>
         <div class="callout ok">
-          啟動約 15 秒後開啟 <code>http://localhost:8080</code>（帳號 <code>dio</code> / 密碼 <code>TestPassword123!</code>），或 <code>ssh -p 2222 ubuntu@localhost</code>。
+          啟動約 15 秒後開啟 <code>http://localhost:8080</code>（帳號 <code>dio</code> / 密碼 <code>TestPassword123!</code>），或測試跨容器橋接：<code>ros-bridge serve</code> + <code>ros-bridge connect ws://localhost:7448 -u dio:TestPassword123!</code>。
         </div>
       </div>
 
@@ -1096,15 +1121,20 @@ kubectl -n robotics get configmap,networkpolicy,limitrange</code></pre>
 
       <div class="tab-panel" data-panel="d-user">
         <div class="code-block">
-          <div class="code-header"><span>日常新增開發者（免 Helm，互不干擾）</span><button class="copy-btn">複製</button></div>
-          <pre><code>cp -r k8s/users/alice k8s/users/bob
-# 編輯 k8s/users/bob/{auth.env, patch.yaml, kustomization.yaml}
-# 1) 設定唯一 UDP Port（如 50003）與 ROS_DOMAIN_ID（如 13）
-# 2) 設定 Ingress Host（bob.selkies.local）並啟用 components/seccomp-podman-localhost
+          <div class="code-header"><span>v4 生產零中斷使用者生命週期管理（自動產生強密碼・單人獨立更新・閒置休眠釋放 MIG）</span><button class="copy-btn">複製</button></div>
+          <pre><code>chmod +x deploy/manage-user.sh
 
-kubectl kustomize k8s/users/bob | less   # 先預覽渲染結果
-kubectl apply -k k8s/users/bob           # 單人上線
-kubectl apply -k k8s/users               # 批次同步全員</code></pre>
+# 1. 建立新使用者（自動檢查 UDP 埠衝突、生成 24 字元隨機強密碼、獨立釘選 v4 映像）
+./deploy/manage-user.sh create bob --udp-port 50003 --domain 13 --mig 1g
+
+# 2. 預演並「單獨」部署 bob（攔截範例弱密碼，且 100% 不會重啟任何其他在線開發者！）
+./deploy/manage-user.sh apply bob --dry-run
+./deploy/manage-user.sh apply bob
+
+# 3. 閒置休眠（縮容至 0 立即釋放 PRO 6000 MIG 切片，100% 保留個人與 Podman PVC）與喚醒
+./deploy/manage-user.sh hibernate bob
+./deploy/manage-user.sh wake bob
+./deploy/manage-user.sh status</code></pre>
         </div>
       </div>
 
@@ -1193,10 +1223,10 @@ pip install trimesh</code></pre>
           <h4>方式 A：中繼機鏡像至內網私有 Registry</h4>
           <div class="code-block">
             <div class="code-header"><span>Harbor 推送</span><button class="copy-btn">複製</button></div>
-            <pre><code>docker pull fritingo/robot-infra:v3
-docker tag fritingo/robot-infra:v3 \
-  harbor.company.com/robotics/robot-infra:v3
-docker push harbor.company.com/robotics/robot-infra:v3</code></pre>
+            <pre><code>docker pull fritingo/robot-infra:v4
+docker tag fritingo/robot-infra:v4 \
+  harbor.company.com/robotics/robot-infra:v4
+docker push harbor.company.com/robotics/robot-infra:v4</code></pre>
           </div>
         </div>
 
@@ -1204,12 +1234,12 @@ docker push harbor.company.com/robotics/robot-infra:v3</code></pre>
           <h4>方式 B：實體離線打包匯入（Docker / Podman / ctr）</h4>
           <div class="code-block">
             <div class="code-header"><span>Tar 校驗匯入</span><button class="copy-btn">複製</button></div>
-            <pre><code>docker save fritingo/robot-infra:v3 -o robot-infra-v3.tar
-sha256sum robot-infra-v3.tar &gt; robot-infra-v3.tar.sha256
+            <pre><code>docker save fritingo/robot-infra:v4 -o robot-infra-v4.tar
+sha256sum robot-infra-v4.tar &gt; robot-infra-v4.tar.sha256
 # 內網校驗後三擇一匯入：
-docker load -i robot-infra-v3.tar
-podman load -i robot-infra-v3.tar
-sudo ctr -n k8s.io images import robot-infra-v3.tar</code></pre>
+docker load -i robot-infra-v4.tar
+podman load -i robot-infra-v4.tar
+sudo ctr -n k8s.io images import robot-infra-v4.tar</code></pre>
           </div>
         </div>
       </div>
@@ -1236,8 +1266,8 @@ sudo ctr -n k8s.io images import robot-infra-v3.tar</code></pre>
     <section id="sec-cve" class="searchable">
       <h2><span class="sec-num">10</span>Trivy CVE 漏洞掃描與修補報告</h2>
       <p>
-        <code>fritingo/robot-infra:v3</code>（已推送 <code>sha256:d2a8deed78b87ed47272164333325b4c10ae30650061dc13cd32ae66f3730d9e</code>）經
-        <code>aquasec/trivy</code> 掃描並完成修補：全面升級 Ubuntu 24.04 與 ROS 2 Jazzy 安全更新（含 <code>linux-libc-dev 6.8.0-151.151</code>、<code>apt</code>、<code>sudo</code>）、移除未使用之 <code>ipp-usb</code>（77 Go CVEs）與 <code>nginx</code>/<code>apache2-utils</code>（9 HIGH CVEs）、升級 <code>pillow 13.0.0</code> / <code>msgpack 1.2.4</code> 及 <code>yq v4.54.3</code>，新增之 CycloneDDS 與 <code>zenoh-bridge-ros2dds v1.10.2</code> 亦確認零可修補 CRITICAL / HIGH。
+        <code>fritingo/robot-infra:v4</code>（已推送 <code>sha256:34bb889bbe09e67b39d28fff8b3cac67b4d59bd107d4ff4659ca5dd200776958</code>）經
+        <code>aquasec/trivy</code> 掃描並完成修補：全面升級 Ubuntu 24.04 與 ROS 2 Jazzy 安全更新、移除未使用之 <code>ipp-usb</code>（77 Go CVEs）與 <code>nginx</code>/<code>apache2-utils</code>（9 HIGH CVEs）、升級 <code>pillow 13.0.0</code> / <code>msgpack 1.2.4</code> 及 <code>yq v4.54.3</code>，新增之 CycloneDDS、<code>zenoh-bridge-ros2dds v1.10.2</code>、<code>zenoh-ws-auth-proxy.py</code> 與 <code>robot-metrics-exporter</code>（純 Python 3.12 標準庫）亦確認零可修補 CRITICAL / HIGH。
       </p>
 
       <div class="grid-4" style="margin-bottom:16px">

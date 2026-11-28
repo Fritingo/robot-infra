@@ -8,6 +8,12 @@ metadata:
     app.kubernetes.io/component: zenoh-hub
 spec:
   replicas: 1
+  # v4 零中斷更新：先拉起新 Hub 通過 Readiness 再退舊 Hub，避免跨 Pod 連線閃斷
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
@@ -104,6 +110,16 @@ spec:
             - name: zenoh-tcp
               containerPort: {{ .Values.rosZenohHub.tcpPort | default 7447 }}
               protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: zenoh-tcp
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: zenoh-tcp
+            initialDelaySeconds: 10
+            periodSeconds: 20
           securityContext:
             privileged: false
             allowPrivilegeEscalation: false

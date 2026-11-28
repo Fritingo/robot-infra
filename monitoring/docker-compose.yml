@@ -13,8 +13,8 @@
 
 services:
   selkies:
-    image: fritingo/robot-infra:v3
-    container_name: robot-infra-v3-selkies
+    image: fritingo/robot-infra:v4
+    container_name: robot-infra-v4-selkies
     shm_size: "4g"
     ipc: "shareable"
     cap_drop:
@@ -60,8 +60,8 @@ services:
       - robot-monitoring
 
   metrics-exporter:
-    image: fritingo/robot-infra:v3
-    container_name: robot-infra-v3-metrics-exporter
+    image: fritingo/robot-infra:v4
+    container_name: robot-infra-v4-metrics-exporter
     # 與 selkies 共享網路與 IPC 命名空間（等同 K8s 同 Pod Sidecar：可直連 127.0.0.1:8080、讀取 /proc/net/tcp 與共享 4G /dev/shm）
     network_mode: "service:selkies"
     ipc: "service:selkies"
@@ -96,7 +96,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.55.1
-    container_name: robot-infra-v3-prometheus
+    container_name: robot-infra-v4-prometheus
     depends_on:
       - metrics-exporter
     ports:
@@ -115,7 +115,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.3.1
-    container_name: robot-infra-v3-grafana
+    container_name: robot-infra-v4-grafana
     depends_on:
       - prometheus
     ports:

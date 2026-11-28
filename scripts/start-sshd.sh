@@ -30,6 +30,26 @@ chmod 600 "${HOST_KEY_DIR}"/ssh_host_*_key
 touch "${SSH_DIR}/authorized_keys"
 chmod 600 "${SSH_DIR}/authorized_keys"
 
+# 支援環境變數或 Secret 檔案預先注入 SSH 公鑰（自動去重，不覆蓋使用者既有金鑰）
+EXTRA_KEYS="${SSH_AUTHORIZED_KEYS:-}"
+if [[ -z "${EXTRA_KEYS}" && -f /run/secrets/selkies-auth/SSH_AUTHORIZED_KEYS ]]; then
+  EXTRA_KEYS="$(cat /run/secrets/selkies-auth/SSH_AUTHORIZED_KEYS)"
+fi
+if [[ -n "${EXTRA_KEYS}" ]]; then
+  while IFS= read -r kline; do
+    kline="${kline%$'\r'}"
+    [[ -z "${kline}" || "${kline}" == \#* ]] && continue
+    if ! grep -qxF "${kline}" "${SSH_DIR}/authorized_keys" 2>/dev/null; then
+      printf '%s\n' "${kline}" >> "${SSH_DIR}/authorized_keys"
+    fi
+  done <<< "${EXTRA_KEYS}"
+fi
+
+PASS_AUTH="yes"
+if [[ "${SSH_DISABLE_PASSWORD_AUTH:-false}" == "true" ]]; then
+  PASS_AUTH="no"
+fi
+
 cat <<EOF > "$SSHD_CFG"
 Port 2222
 ListenAddress 0.0.0.0
@@ -41,7 +61,7 @@ HostKey ${HOST_KEY_DIR}/ssh_host_rsa_key
 StrictModes no
 PubkeyAuthentication yes
 AuthorizedKeysFile ${SSH_DIR}/authorized_keys
-PasswordAuthentication yes
+PasswordAuthentication ${PASS_AUTH}
 KbdInteractiveAuthentication no
 UsePAM yes
 

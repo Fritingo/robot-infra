@@ -20,6 +20,7 @@ spec:
       hostNetwork: false
       hostPID: false
       hostIPC: false
+      terminationGracePeriodSeconds: 60
       # 三重硬體排程鎖定：確保 Pod 絕對只排程至 RTX PRO 6000 Blackwell 節點，絕不碰觸 H200 / H100 / A100 / B300
       nodeSelector:
         robot-infra/gpu-pool: "rtx-pro-6000"
@@ -60,7 +61,7 @@ spec:
           type: Unconfined
       containers:
         - name: selkies-desktop
-          image: registry.local/robotics/robot-infra:v3
+          image: registry.local/robotics/robot-infra:v4
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: false
@@ -94,15 +95,24 @@ spec:
               containerPort: 7448
               protocol: TCP
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: http-web
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: http-web
             initialDelaySeconds: 20
             periodSeconds: 30
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - "ros-bridge stop >/dev/null 2>&1 || true; sync"
           env:
             - name: TZ
               value: "Asia/Taipei"
@@ -164,10 +174,12 @@ spec:
             requests:
               cpu: "4"
               memory: "16Gi"
+              ephemeral-storage: "2Gi"
               nvidia.com/mig-1g.24gb.gfx: 1
             limits:
               cpu: "8"
               memory: "32Gi"
+              ephemeral-storage: "12Gi"
               nvidia.com/mig-1g.24gb.gfx: 1
           volumeMounts:
             - name: dshm

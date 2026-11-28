@@ -167,6 +167,9 @@ export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file:///etc/ros/cyclonedds.xml}"
 export ZENOH_ROUTER_CHECK_ATTEMPTS="${ZENOH_ROUTER_CHECK_ATTEMPTS:-5}"
 export ZENOH_CONFIG_OVERRIDE="${ZENOH_CONFIG_OVERRIDE:-transport/shared_memory/enabled=true;transport/shared_memory/transport_optimization/pool_size=268435456}"
+# v4 生產防搶核預設：限制 colcon / CMake / Make 預設平行編譯數為 4（避免單人吃滿整台節點核心導致同卡桌面掉幀；仍可手動覆寫）
+export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+export MAKEFLAGS="${MAKEFLAGS:--j4}"
 
 if [ -n "${BASH_VERSION:-}" ] && [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
   source "/opt/ros/${ROS_DISTRO}/setup.bash"
@@ -194,6 +197,8 @@ COPY scripts/start-sshd.sh /usr/local/bin/start-sshd.sh
 COPY scripts/mig-podman /usr/local/bin/mig-podman
 COPY scripts/launch-isaac-sim /usr/local/bin/launch-isaac-sim
 COPY scripts/ros-bridge /usr/local/bin/ros-bridge
+COPY scripts/zenoh-ws-auth-proxy.py /usr/local/bin/zenoh-ws-auth-proxy.py
+COPY monitoring/exporter/robot_metrics_exporter.py /usr/local/bin/robot-metrics-exporter
 RUN mkdir -p /run/sshd \
     && chmod 0755 \
     /run/sshd \
@@ -202,9 +207,11 @@ RUN mkdir -p /run/sshd \
     /usr/local/bin/start-sshd.sh \
     /usr/local/bin/mig-podman \
     /usr/local/bin/launch-isaac-sim \
-    /usr/local/bin/ros-bridge
+    /usr/local/bin/ros-bridge \
+    /usr/local/bin/zenoh-ws-auth-proxy.py \
+    /usr/local/bin/robot-metrics-exporter
 
-# 移除舊版 selkies-gstreamer / nginx 設定，將基礎桌面服務改以 ubuntu 執行，並修正非 Root sshd 的 PAM 限制
+# 移除舊版 selkies-gstreamer / nginx 設定，將基礎桌面服務改以 ubuntu 執行、加上日誌輪替上限，並修正非 Root sshd 的 PAM 限制
 RUN <<'EOF'
 python3 - <<'PY'
 import glob, re
@@ -220,9 +227,18 @@ for p in targets:
         new_txt = re.sub(rf"(?ms)^\[program:{prog}\].*?(?=^\[|\Z)", "", new_txt)
     if p == "/etc/supervisord.conf":
         for prog in ("entrypoint", "dbus", "pipewire", "wireplumber", "pipewire-pulse", "kasmvnc"):
+            def _patch_block(m):
+                blk = m.group(1).rstrip("\n")
+                if not re.search(r"(?m)^user\s*=", blk):
+                    blk += "\nuser=ubuntu"
+                if not re.search(r"(?m)^stdout_logfile_maxbytes\s*=", blk):
+                    blk += "\nstdout_logfile_maxbytes=10MB\nstdout_logfile_backups=2"
+                if not re.search(r"(?m)^stderr_logfile_maxbytes\s*=", blk):
+                    blk += "\nstderr_logfile_maxbytes=10MB\nstderr_logfile_backups=2"
+                return blk + "\n\n"
             new_txt = re.sub(
                 rf"(?ms)(^\[program:{prog}\]\n(?:(?!^\[).)*?)(?=^\[|\Z)",
-                lambda m: m.group(1) if re.search(r"(?m)^user\s*=", m.group(1)) else m.group(1).rstrip("\n") + "\nuser=ubuntu\n\n",
+                _patch_block,
                 new_txt,
             )
     if new_txt != txt:

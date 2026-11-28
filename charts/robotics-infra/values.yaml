@@ -51,6 +51,16 @@ limitRange:
   defaultLimitCpu: "8"
   defaultLimitMemory: "32Gi"
 
+# 3.5 選配：Namespace 總量配額防呆 ResourceQuota（防止誤建過多用戶卡住整台 PRO 6000 排程）
+resourceQuota:
+  enabled: false
+  hard:
+    requests.cpu: "64"
+    limits.cpu: "128"
+    requests.memory: "256Gi"
+    limits.memory: "512Gi"
+    persistentvolumeclaims: "30"
+
 # 4. 選配：共用 Coturn UDP 中繼（僅隔離私網無法使用 webrtc-udp-mux 時改為 enabled: true）
 #    無純 CPU 節點時預設集中於 RTX PRO 6000 節點（佔用 0 GPU，嚴格排除 H200/H100/A100/B300）
 coturn:
@@ -90,7 +100,7 @@ rosZenohHub:
   enabled: false
   image:
     repository: "registry.local/robotics/robot-infra"
-    tag: "v3"
+    tag: "v4"
     pullPolicy: IfNotPresent
     pullSecrets: []
   tcpPort: 7447
@@ -138,7 +148,7 @@ monitoring:
     additionalLabels: {}
   grafanaDashboard:
     enabled: false
-    folder: "Robot-Infra v3"
+    folder: "Robot-Infra v4"
     sidecarLabel: "grafana_dashboard"
     sidecarLabelValue: "1"
     additionalLabels: {}

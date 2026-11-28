@@ -875,7 +875,7 @@
   "time": { "from": "now-30m", "to": "now" },
   "timepicker": {},
   "timezone": "Asia/Taipei",
-  "title": "Robot-Infra v3 — RTX PRO 6000 & Selkies ROS 2 監控總覽",
+  "title": "Robot-Infra v4 — RTX PRO 6000 & Selkies ROS 2 生產監控總覽",
   "uid": "robot-infra-v3-overview",
   "version": 1,
   "weekStart": ""

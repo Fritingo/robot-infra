@@ -7,6 +7,8 @@ spec:
     spec:
       containers:
         - name: selkies-desktop
+          # v4 生產零中斷策略：每位使用者獨立釘選映像標籤，未來基底升級時不會強制重啟線上開發者
+          image: registry.local/robotics/robot-infra:v4
           env:
             - name: SELKIES_BASIC_AUTH_USER
               value: "alice"

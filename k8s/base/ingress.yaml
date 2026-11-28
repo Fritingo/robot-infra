@@ -10,7 +10,8 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    # v4 生產防呆：限制單次 HTTP 上傳上限為 4g（避免無限大上傳拖慢共用 Ingress-NGINX；超大資產改走 SFTP 或唯讀 PVC）
+    nginx.ingress.kubernetes.io/proxy-body-size: "4g"
 spec:
   ingressClassName: "nginx"
   tls:

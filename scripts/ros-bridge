@@ -33,7 +33,7 @@ set -euo pipefail
 #   ROS_BRIDGE_LOCAL_TUNNEL_PORT 本機 websocat client 轉發埠（預設 7449）
 # ==============================================================================
 
-STATE_DIR="/tmp/ros-bridge-${USER:-ubuntu}"
+STATE_DIR="${STATE_DIR:-/tmp/ros-bridge-${USER:-ubuntu}}"
 BRIDGE_PID_FILE="${STATE_DIR}/bridge.pid"
 TUNNEL_PID_FILE="${STATE_DIR}/tunnel.pid"
 META_FILE="${STATE_DIR}/meta.env"
@@ -70,6 +70,17 @@ stop_all() {
 
 ensure_cyclonedds_env() {
   export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file:///etc/ros/cyclonedds.xml}"
+}
+
+rotate_log_if_needed() {
+  local lf="$1"
+  if [[ -f "$lf" ]]; then
+    local sz
+    sz="$(stat -c '%s' "$lf" 2>/dev/null || echo 0)"
+    if [[ "$sz" -gt 10485760 ]]; then
+      mv -f "$lf" "${lf}.1" 2>/dev/null || : > "$lf"
+    fi
+  fi
 }
 
 if [[ $# -eq 0 ]]; then
@@ -196,6 +207,7 @@ if [[ "$CMD" == "serve" ]]; then
     exec /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}"
   fi
 
+  rotate_log_if_needed "${BRIDGE_LOG}"
   nohup /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}" >"${BRIDGE_LOG}" 2>&1 </dev/null &
   echo $! > "${BRIDGE_PID_FILE}"
   sleep 1
@@ -205,7 +217,8 @@ if [[ "$CMD" == "serve" ]]; then
     exit 1
   fi
   echo "[ros-bridge] 已啟動 serve 模式（ROS_DOMAIN_ID=${DOMAIN}, listen=127.0.0.1:${LISTEN_PORT}）。"
-  echo "             其他 Pod / 外部主機可經由 Ingress 連線：ros-bridge connect wss://<你的網域>/zenoh"
+  echo "             其他 Pod / 外部主機可經由 Ingress 連線（v4 預設啟用 Basic Auth 保護）："
+  echo "             ros-bridge connect wss://<你的網域>/zenoh -u ${SELKIES_BASIC_AUTH_USER:-ubuntu}:<WEB_PASSWORD> -k"
   exit 0
 fi
 
@@ -217,11 +230,13 @@ if [[ "${TARGET}" == wss://* || "${TARGET}" == ws://* ]]; then
   if [[ "${INSECURE}" == "1" ]]; then
     WS_ARGS+=(-k)
   fi
+  rotate_log_if_needed "${TUNNEL_LOG}"
   if [[ -n "${AUTH_CREDS}" ]]; then
-    AUTH_B64="$(printf '%s' "${AUTH_CREDS}" | base64 -w0)"
-    WS_ARGS+=(-H "Authorization: Basic ${AUTH_B64}")
+    # WEBSOCAT_BASIC_AUTH 接受原始 user:pass 並由 websocat 自動 Base64 編碼：免除 -H 吞參數問題且不在 ps aux 洩漏密碼
+    nohup env "WEBSOCAT_BASIC_AUTH=${AUTH_CREDS}" /usr/local/bin/websocat "${WS_ARGS[@]}" "tcp-l:127.0.0.1:${TUNNEL_PORT}" "${TARGET}" >"${TUNNEL_LOG}" 2>&1 </dev/null &
+  else
+    nohup /usr/local/bin/websocat "${WS_ARGS[@]}" "tcp-l:127.0.0.1:${TUNNEL_PORT}" "${TARGET}" >"${TUNNEL_LOG}" 2>&1 </dev/null &
   fi
-  nohup /usr/local/bin/websocat "${WS_ARGS[@]}" "tcp-l:127.0.0.1:${TUNNEL_PORT}" "${TARGET}" >"${TUNNEL_LOG}" 2>&1 </dev/null &
   echo $! > "${TUNNEL_PID_FILE}"
   sleep 0.5
   if ! is_running "${TUNNEL_PID_FILE}"; then
@@ -240,6 +255,7 @@ if [[ "${FOREGROUND}" == "1" ]]; then
   exec /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}"
 fi
 
+rotate_log_if_needed "${BRIDGE_LOG}"
 nohup /usr/local/bin/zenoh-bridge-ros2dds "${BRIDGE_ARGS[@]}" >"${BRIDGE_LOG}" 2>&1 </dev/null &
 echo $! > "${BRIDGE_PID_FILE}"
 sleep 1.5

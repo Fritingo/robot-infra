@@ -25,6 +25,7 @@ spec:
       hostNetwork: false
       hostPID: false
       hostIPC: false
+      terminationGracePeriodSeconds: 60
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -82,16 +83,29 @@ spec:
               containerPort: {{ .Values.rosBridge.wsBridgePort | default 7448 }}
               protocol: TCP
             {{- end }}
+          {{- $healthPath := "/api/health" -}}
+          {{- if eq (.Values.ingress.routingMode | default "subdomain") "subfolder" -}}
+            {{- $healthPath = printf "/%s/api/health" .Values.user.name -}}
+          {{- end }}
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ $healthPath | quote }}
               port: http-web
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ $healthPath | quote }}
               port: http-web
             initialDelaySeconds: 20
             periodSeconds: 30
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - "ros-bridge stop >/dev/null 2>&1 || true; sync"
           env:
             - name: TZ
               value: {{ .Values.user.timezone | default "Asia/Taipei" | quote }}
@@ -243,12 +257,18 @@ spec:
             requests:
               cpu: {{ .Values.resources.requests.cpu | quote }}
               memory: {{ .Values.resources.requests.memory | quote }}
+              {{- if .Values.resources.requests.ephemeralStorage }}
+              ephemeral-storage: {{ .Values.resources.requests.ephemeralStorage | quote }}
+              {{- end }}
               {{- if .Values.gpu.enabled }}
               {{ .Values.gpu.resourceName }}: {{ .Values.gpu.count }}
               {{- end }}
             limits:
               cpu: {{ .Values.resources.limits.cpu | quote }}
               memory: {{ .Values.resources.limits.memory | quote }}
+              {{- if .Values.resources.limits.ephemeralStorage }}
+              ephemeral-storage: {{ .Values.resources.limits.ephemeralStorage | quote }}
+              {{- end }}
               {{- if .Values.gpu.enabled }}
               {{ .Values.gpu.resourceName }}: {{ .Values.gpu.count }}
               {{- end }}

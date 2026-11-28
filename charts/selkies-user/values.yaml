@@ -19,7 +19,7 @@ user:
 image:
   # 純內網私有 Registry 路徑（避免連外拉取 ghcr.io / docker.io）
   repository: "registry.local/robotics/robot-infra"
-  tag: "v3"
+  tag: "v4"
   pullPolicy: IfNotPresent
   pullSecrets: []
   #  - name: regcred
@@ -112,6 +112,8 @@ ingress:
   tls:
     enabled: true
     secretName: "selkies-wildcard-tls"
+  # 限制單次網頁上傳上限，避免拖慢共用 Ingress-NGINX
+  proxyBodySize: "4g"
   extraAnnotations: {}
 
 # ==============================================================================
@@ -159,9 +161,11 @@ resources:
   requests:
     cpu: "4"
     memory: "16Gi"
+    ephemeralStorage: "2Gi"
   limits:
     cpu: "8"
     memory: "32Gi"
+    ephemeralStorage: "12Gi"
 
 shmSizeLimit: "8Gi"
 

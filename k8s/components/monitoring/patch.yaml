@@ -11,7 +11,7 @@ spec:
             - name: SELKIES_ENABLE_METRICS_HTTP
               value: "true"
         - name: metrics-exporter
-          image: registry.local/robotics/robot-infra:v3
+          image: registry.local/robotics/robot-infra:v4
           imagePullPolicy: IfNotPresent
           command:
             - python3

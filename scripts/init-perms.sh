@@ -42,9 +42,14 @@ if [[ "$(stat -c '%u' "${RUNTIME_DIR}" 2>/dev/null || echo 0)" != "1000" ]]; the
 fi
 chmod 700 "${RUNTIME_DIR}" 2>/dev/null || run_root chmod 700 "${RUNTIME_DIR}" || true
 
-if [[ -n "${PASSWD:-}" ]]; then
+EFFECTIVE_PASSWD="${PASSWD:-}"
+if [[ -z "${EFFECTIVE_PASSWD}" && -f /run/secrets/selkies-auth/LINUX_PASSWORD ]]; then
+  EFFECTIVE_PASSWD="$(tr -d '\r\n' < /run/secrets/selkies-auth/LINUX_PASSWORD)"
+fi
+
+if [[ -n "${EFFECTIVE_PASSWD}" ]]; then
   for _ in $(seq 1 5); do
-    if printf 'ubuntu:%s\n' "${PASSWD}" | run_root chpasswd 2>/dev/null; then
+    if printf 'ubuntu:%s\n' "${EFFECTIVE_PASSWD}" | run_root chpasswd 2>/dev/null; then
       break
     fi
     sleep 0.5

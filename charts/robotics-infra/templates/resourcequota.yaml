@@ -1,0 +1,11 @@
+{{- if and .Values.resourceQuota .Values.resourceQuota.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-quota
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+spec:
+  hard:
+    {{- toYaml .Values.resourceQuota.hard | nindent 4 }}
+{{- end }}
