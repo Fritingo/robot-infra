@@ -33,6 +33,7 @@ secretGenerator:
 patches:
   - path: patch.yaml
   # 修改 UDP Mux 埠位為 50002（與 dio 的 50001 隔離，零衝突）
+  # 注意：若啟用上方 components/transport-websockets（會移除 ports/3），請一併註解掉下方這段 ports/3 patch，以免覆寫到 zenoh-ws (7448)
   - target:
       kind: Deployment
       name: selkies

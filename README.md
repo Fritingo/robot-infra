@@ -70,6 +70,7 @@ cd robot-infra-v3
 所有開發者共享同一組 Ingress-NGINX IP（TCP 443），零個人 LoadBalancer IP、零 SSH NodePort：
 - **Web 桌面與信令**：`https://<user>.selkies.local/` → Ingress-NGINX → `Service:80` → `Pod:8080`（Selkies v2.2.1，Basic Auth）
 - **SSH WebSocket 隧道**：`wss://<user>.selkies.local/ssh` → Ingress-NGINX → `Service:2223` → `Pod:2223`（`websocat`）→ `127.0.0.1:2222`（Rootless `sshd`）
+- **跨 Pod / 跨實體機 ROS 2 橋接隧道**：`wss://<user>.selkies.local/zenoh` → Ingress-NGINX → `Service:7448` → `Pod:7448`（`websocat`）→ `127.0.0.1:7447`（`zenoh-bridge-ros2dds v1.10.2`），使用者免查 K8s Service
 - **離線 RTC 防漏**：所有模式皆掛載內容為 `{"iceServers": []}` 的 `selkies-airgap-rtc-config` ConfigMap，徹底禁止 Selkies 退回連向 `stun.l.google.com` 或 `stun.cloudflare.com`。
 
 ### 三種純內網傳輸模式比較
@@ -84,11 +85,15 @@ cd robot-infra-v3
 
 ```text
 robot-infra/
-├── Dockerfile                                    # 主映像建置檔（含完整 CVE 修補）
+├── Dockerfile                                    # 主映像建置檔（v3：CycloneDDS + ros-bridge + 完整 CVE 修補）
 ├── .dockerignore                                 # 排除大型壓縮檔與暫存目錄
 ├── README.md                                     # 本完整操作與參數參考手冊
 ├── project-overview.html                         # 單檔純 HTML 離線互動專案說明頁
+├── docs/
+│   ├── index.html                                # GitHub Pages 靜態入口頁（與 project-overview.html 同步）
+│   └── .nojekyll                                 # 停用 Jekyll，直接提供純靜態 HTML
 ├── config/
+│   ├── cyclonedds.xml                            # Pod 預設 CycloneDDS（僅綁定 lo，直通 Podman/Docker、零外洩）
 │   ├── containers.conf                           # Podman 引擎參數（pasta、cgroups=disabled、keyring=false）
 │   ├── storage.conf                              # Podman overlay 與 ignore_chown_errors 設定
 │   └── registries.conf                           # 短名稱搜尋與內網私有 Registry 設定範本
@@ -96,27 +101,32 @@ robot-infra/
 │   ├── init-perms.sh                             # 容器啟動時初始化權限與同步 PASSWD
 │   ├── start-selkies.sh                          # 等待 X11/PipeWire-Pulse 後啟動 Selkies v2.2.1
 │   ├── start-sshd.sh                             # 持久化 Host Keys 並啟動 Rootless sshd (:2222)
-│   ├── mig-podman                                # 自動直通 MIG GPU/Vulkan/X11/Zenoh 的 Podman Wrapper
+│   ├── mig-podman                                # 自動直通 MIG/WSL2 GPU/Vulkan/X11/CycloneDDS 的 Podman Wrapper
+│   ├── ros-bridge                                # 跨 Pod / 跨實體機 CycloneDDS 橋接 CLI（serve / connect / hub）
 │   └── launch-isaac-sim                          # 唯讀 PVC 啟動 Isaac Sim 6.2（快取全數導向個人 PVC）
-├── supervisor/                                   # supervisord 服務定義（init-perms/selkies/sshd/ssh-ws/zenohd）
+├── supervisor/                                   # supervisord 服務定義（init-perms/selkies/sshd/ssh-ws/zenoh-ws/zenohd）
 ├── charts/
-│   ├── robotics-infra/                           # ★ 基礎設施層 Helm Chart（維運管理一次）
+│   ├── robotics-infra/                           # ★ 基礎設施層 Helm Chart（維運管理一次，含可選 rosZenohHub）
 │   │   ├── values.yaml
 │   │   ├── files/podman-rootless-seccomp.json    # 封鎖 45 高危 syscall 之客製 Seccomp Profile
 │   │   └── templates/
 │   ├── selkies-user/                             # （選配）全 Helm 版使用者 Chart
 │   └── coturn-infra/                             # （選配）獨立 Coturn Helm Chart
 ├── k8s/                                          # ★ 使用者層純 kubectl apply -k（免 Helm）
-│   ├── base/                                     # 共用基底：pvc / deployment / service / ingress
-│   ├── components/                               # 4 個可插拔 Kustomize 積木
+│   ├── base/                                     # 共用基底：pvc / deployment（PRO 6000 三重鎖定）/ service / ingress
+│   ├── components/                               # 6 個可插拔 Kustomize 積木
 │   │   ├── seccomp-podman-localhost/
+│   │   ├── smarter-device-tun/                   # OPA Gatekeeper 無 hostPath 取代 /dev/net/tun
+│   │   ├── cross-pod-ros/                        # 注入 Hub 端點供 ros-bridge hub 免查 Service
 │   │   ├── shared-isaac-sim/
 │   │   ├── transport-websockets/
 │   │   └── apparmor-unconfined/
 │   └── users/                                    # dio/、alice/ 與批次 kustomization.yaml
 ├── coturn/                                       # 內網自建 Coturn Dockerfile
 └── deploy/
-    ├── gpu-operator/custom-mig-parted-config.yaml # RTX PRO 6000 Blackwell +gfx MIG 切分
+    ├── gpu-operator/
+    │   ├── custom-mig-parted-config.yaml         # RTX PRO 6000 Blackwell +gfx MIG 切分
+    │   └── apply-pro6000-mig-safe.sh             # 非破壞式合併腳本（防誤傷 H200/H100/A100/B300）
     ├── shared-defaults.yaml                      # Helm 版共用預設值
     ├── users/{dio,alice}.yaml                    # Helm 版個別使用者覆寫值
     └── deploy.sh                                 # Helm 版單人／批次部署腳本
@@ -132,7 +142,8 @@ robot-infra/
 | --- | --- | --- |
 | `ROS_DISTRO` | `jazzy` | 安裝之 ROS 2 發行版（對應 Ubuntu 24.04） |
 | `SELKIES_VERSION` | `2.2.1` | 從官方 GitHub Releases 下載並驗證 SHA256 之 Selkies `.deb` 版本 |
-| `WEBSOCAT_VERSION` | `v1.14.1` | Ingress `/ssh` WebSocket 隧道橋接二進位版本 |
+| `WEBSOCAT_VERSION` | `v1.14.1` | Ingress `/ssh` 與 `/zenoh` WebSocket 隧道橋接二進位版本 |
+| `ZENOH_BRIDGE_VERSION` | `1.10.2` | 跨 Pod / 跨實體機 CycloneDDS 橋接用 `zenoh-bridge-ros2dds` 版本 |
 | `YQ_VERSION` | `v4.54.3` | 升級取代基底舊版之 `/usr/bin/yq` 版本（消除 Go stdlib CVE） |
 | `DEBIAN_FRONTEND` | `noninteractive` | 避免 `apt-get` 建置過程跳出互動式提示 |
 
@@ -140,8 +151,9 @@ robot-infra/
 ```bash
 docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
   --build-arg SELKIES_VERSION=2.2.1 \
+  --build-arg ZENOH_BRIDGE_VERSION=1.10.2 \
   --build-arg YQ_VERSION=v4.54.3 \
-  -t fritingo/robot-infra:v2 --load .
+  -t fritingo/robot-infra:v3 --load .
 ```
 
 ### 3.2 Selkies v2.2.1 串流、認證與網路環境變數（`docker run -e` / K8s `env`）
@@ -180,9 +192,12 @@ docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
 | `NVIDIA_DRIVER_CAPABILITIES` | `all`（K8s） | 注入完整圖形/渲染/編碼/運算驅動能力（`compute,utility,graphics,video,display`） |
 | `ROS_DISTRO` | `jazzy` | 預設載入 `/opt/ros/jazzy/setup.bash` |
 | `ROS_DOMAIN_ID` | `11`（各使用者獨立） | ROS 2 網域隔離編號（建議每人不重複，如 `dio=11`、`alice=12`） |
-| `RMW_IMPLEMENTATION` | `rmw_zenoh_cpp` | ROS 2 中介軟體實作（可覆寫為 `rmw_cyclonedds_cpp` 或 `rmw_fastrtps_cpp`） |
-| `ZENOH_ROUTER_CHECK_ATTEMPTS` | `5` | 節點啟動時探測本機 `zenohd`（`tcp/127.0.0.1:7447`）的重試次數 |
-| `ZENOH_CONFIG_OVERRIDE` | `transport/shared_memory/enabled=true;transport/shared_memory/transport_optimization/pool_size=268435456` | 預設啟用 256MB Zenoh Shared Memory 零複製傳輸 |
+| `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | **v3 預設** ROS 2 中介軟體（內外層 Podman/Docker 直通；需要時仍可手動改 `rmw_zenoh_cpp` 或 `rmw_fastrtps_cpp`） |
+| `CYCLONEDDS_URI` | `file:///etc/ros/cyclonedds.xml` | 綁定 `lo`（`127.0.0.1`）Unicast Peer，確保 0 pps DDS multicast 外洩至宿主機或 K8s CNI |
+| `ROS_BRIDGE_HUB_ENDPOINT` / `WSS_URL` | （由 `cross-pod-ros` 注入） | 啟用共用 Hub 時自動填入，使用者執行 `ros-bridge hub` 完全免查 K8s Service |
+| `ROS_BRIDGE_INSECURE_TLS` | `0`（`cross-pod-ros` 設 `1`） | 設 `1` 允許內網自簽 Wildcard TLS 憑證 |
+| `ZENOH_ROUTER_CHECK_ATTEMPTS` | `5` | 選用 `rmw_zenoh_cpp` 時探測本機 `zenohd`（`tcp/127.0.0.1:7447`）的重試次數 |
+| `ZENOH_CONFIG_OVERRIDE` | `transport/shared_memory/enabled=true;transport/shared_memory/transport_optimization/pool_size=268435456` | 選用 `rmw_zenoh_cpp` 時啟用 256MB Zenoh Shared Memory 零複製傳輸 |
 | `BUILDAH_ISOLATION` | `chroot`（K8s） | 讓非特權 Podman/Buildah `build` 在受限容器內可正常執行 `RUN` 步驟 |
 
 ### 3.4 容器內 Podman 設定檔參數（`config/`）
@@ -200,7 +215,7 @@ docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
 ### 4.1 `mig-podman`（無特權 MIG GPU 容器包裝器）
 
 - **子指令行為**：
-  - `mig-podman run ...` / `mig-podman create ...`：自動注入 `--security-opt label=disable`、`--cgroups=disabled`、`--network=host`（共享當前 Pod 網路，非宿主機）、`--ipc=host`（共享當前 Pod `/dev/shm`）、MIG 字元裝置（`/dev/nvidia*`、`/dev/nvidia-caps/*`、`/dev/dri/*`）、NVIDIA `.so` 與 EGL/Vulkan ICD 唯讀掛載、X11 `DISPLAY`/`XAUTHORITY` 與 ROS 2/Zenoh 變數。
+  - `mig-podman run ...` / `mig-podman create ...`：自動注入 `--security-opt label=disable`、`--cgroups=disabled`、`--network=host`（共享當前 Pod 網路，非宿主機）、`--ipc=host`（共享當前 Pod `/dev/shm`）、MIG 字元裝置（`/dev/nvidia*`、`/dev/nvidia-caps/*`、`/dev/dri/*`；本機 WSL2 自動偵測 `/dev/dxg`）、NVIDIA `.so` 與 EGL/Vulkan ICD 唯讀掛載、X11 `DISPLAY`/`XAUTHORITY` 與預設 CycloneDDS（`CYCLONEDDS_URI` 自動唯讀掛載 `/etc/ros/cyclonedds.xml`）及 ROS 2/Zenoh 變數。
   - 若使用者已自行傳入 `--network`、`--ipc` 或 `--cgroups`，腳本會自動尊重使用者設定而不覆蓋。
   - 其他子指令（`pull`、`images`、`ps`、`build`、`rm` 等）：直接透傳給原生 `/usr/bin/podman`。
 - **可控環境變數**：
@@ -209,7 +224,7 @@ docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
 | --- | --- | --- | --- |
 | `MIG_PODMAN_NO_GPU` | `0` | `0` \| `1` | 設 `1` 關閉 MIG GPU 裝置與 NVIDIA 驅動函式庫直通 |
 | `MIG_PODMAN_NO_X11` | `0` | `0` \| `1` | 設 `1` 關閉 X11 Socket 與 `DISPLAY` 掛載（適合純無頭批次訓練） |
-| `MIG_PODMAN_ZENOH` | `auto` | `auto` \| `1` \| `0` | `auto` 透傳已設定的 ROS2/Zenoh 變數並自動唯讀掛載 `*_CONFIG_URI` 檔案；`1` 強制注入 `RMW_IMPLEMENTATION=rmw_zenoh_cpp`；`0` 關閉 |
+| `MIG_PODMAN_ZENOH` | `auto` | `auto` \| `1` \| `0` | `auto`（預設）透傳 `RMW_IMPLEMENTATION` / `ROS_DOMAIN_ID` / `CYCLONEDDS_URI`（並唯讀掛載設定檔）；`1` 強制切換 `rmw_zenoh_cpp`；`0` 關閉 |
 | `MIG_PODMAN_DRY_RUN` | `0` | `0` \| `1` | 設 `1` 僅印出最終組裝完成的 `podman` 指令列，不實際執行 |
 | `PODMAN_BIN` | `/usr/bin/podman` | 執行檔路徑 | 覆寫底層 `podman` 二進位路徑 |
 
@@ -262,15 +277,15 @@ docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
   launch-isaac-sim --python ~/ws/scripts/pick_place.py --num_envs 64
   ```
 
-### 4.4 `ros-bridge`（免查 K8s Service・跨 Pod / 跨實體機 CycloneDDS 橋接工具）
+### 4.3 `ros-bridge`（免查 K8s Service・跨 Pod / 跨實體機 CycloneDDS 橋接工具）
 
 預設各 Pod 內使用 CycloneDDS 僅於 `lo`（`127.0.0.1`）運作，外層容器與內層 `mig-podman` / Docker 直接互通且不跨 Pod 外洩；需要跨 Pod（即使不同 `ROS_DOMAIN_ID`）或跨實體機器人互通時，直接透過單一 Ingress `wss://<user>.selkies.local/zenoh` 或共用 Hub：
 
 | 指令語法 | 作用與場景 |
 | --- | --- |
 | `ros-bridge serve [--allow REGEX] [--namespace NS] [--domain ID]` | 在本機 `127.0.0.1:7447` 啟動 `zenoh-bridge-ros2dds` Router，自動透過 `zenoh-ws` (`:7448`) 與個人 Ingress `wss://<user>.selkies.local/zenoh` 對外開放橋接 |
-| `ros-bridge connect <wss://peer.selkies.local/zenoh \| tcp/ip:port> [--allow REGEX] [-n NS] [-k]` | 將本 Pod（含內層 `mig-podman`）的 CycloneDDS 橋接至另一位使用者的 Pod 或外部機器人（`-k` 允許內網自簽 Wildcard TLS） |
-| `ros-bridge hub [--allow REGEX] [-n NS] [-k]` | 自動讀取 `k8s/components/cross-pod-ros` 注入的 `ROS_BRIDGE_HUB_ENDPOINT` / `ROS_BRIDGE_HUB_WSS_URL` 加入共用星狀 Hub，**使用者完全免查 K8s Service** |
+| `ros-bridge connect <wss://peer.selkies.local/zenoh \| tcp/ip:port> [--allow REGEX] [-n NS] [-u user:pass] [-k]` | 將本 Pod（含內層 `mig-podman`）的 CycloneDDS 橋接至另一位使用者的 Pod 或外部機器人（`-k` 允許內網自簽 Wildcard TLS） |
+| `ros-bridge hub [--allow REGEX] [-n NS] [-u user:pass] [-k]` | 自動讀取 `k8s/components/cross-pod-ros` 注入的 `ROS_BRIDGE_HUB_ENDPOINT` / `ROS_BRIDGE_HUB_WSS_URL` 加入共用星狀 Hub，**使用者完全免查 K8s Service** |
 | `ros-bridge status` / `logs` / `stop` | 檢視狀態、日誌或停止橋接行程 |
 
 ```bash
@@ -286,7 +301,7 @@ ros-bridge hub
 # 提示：在 Single-UID Rootless Podman 內若需臨時 apt-get 安裝套件，請加 -o APT::Sandbox::User=root
 ```
 
-### 4.3 `supervisord` 容器內背景服務清單與控制
+### 4.4 `supervisord` 容器內背景服務清單與控制
 
 容器 ENTRYPOINT 為 `/usr/bin/supervisord`（以 `USER ubuntu` 身分啟動），管理以下常駐／初始化服務：
 
@@ -297,7 +312,8 @@ ros-bridge hub
 | `selkies` | `40` | TCP `:8080`（+ UDP Mux） | `stdout` / `stderr` | Selkies v2.2.1 串流伺服器（`docker logs` / `kubectl logs` 可直接查看） |
 | `sshd` | `50` | TCP `:2222` | `/tmp/sshd.log` | Rootless OpenSSH（Host Keys 持久化於 `~/.ssh/host_keys`） |
 | `ssh-ws` | `55` | TCP `:2223` → `127.0.0.1:2222` | `/tmp/ssh-ws.log` | `websocat --binary --exit-on-eof` 供 Ingress `/ssh` 轉發 |
-| `zenohd` | `60` | TCP `127.0.0.1:7447` | `/tmp/zenohd.log` | ROS 2 `rmw_zenohd` 本機路由器 |
+| `zenoh-ws` | `56` | TCP `:7448` → `127.0.0.1:7447` | `/tmp/zenoh-ws.log` | `websocat --binary --exit-on-eof` 供 Ingress `/zenoh` 轉發給 `ros-bridge serve` |
+| `zenohd` | `60` | 預設 `STOPPED`（`autostart=false`） | `/tmp/zenohd.log` | 選用舊版 `rmw_zenoh_cpp` 時才需手動 `supervisorctl start zenohd` |
 
 容器內檢視或單獨重啟服務：
 ```bash
@@ -312,8 +328,8 @@ supervisorctl tail -f sshd stderr
 
 ### Linux / macOS（Bash）
 ```bash
-docker rm -f test-selkies-v2 2>/dev/null || true
-docker run -d --name test-selkies-v2 \
+docker rm -f test-selkies-v3 2>/dev/null || true
+docker run -d --name test-selkies-v3 \
   --gpus all --shm-size=4g \
   --cap-drop=ALL \
   --cap-add=SETUID --cap-add=SETGID --cap-add=CHOWN \
@@ -321,7 +337,7 @@ docker run -d --name test-selkies-v2 \
   --security-opt seccomp="$(pwd)/charts/robotics-infra/files/podman-rootless-seccomp.json" \
   --device /dev/net/tun:/dev/net/tun \
   -v selkies-podman-storage:/home/ubuntu/.local/share/containers \
-  -p 8080:8080 -p 2222:2222 -p 2223:2223 \
+  -p 8080:8080 -p 2222:2222 -p 2223:2223 -p 7448:7448 \
   -e TZ=Asia/Taipei \
   -e PASSWD="TestPassword123!" \
   -e SELKIES_ENABLE_BASIC_AUTH="true" \
@@ -329,14 +345,14 @@ docker run -d --name test-selkies-v2 \
   -e SELKIES_BASIC_AUTH_PASSWORD="TestPassword123!" \
   -e SELKIES_MODE="websockets" \
   -e ROS_DOMAIN_ID="11" \
-  fritingo/robot-infra:v2
+  fritingo/robot-infra:v3
 ```
 
 ### Windows（PowerShell）
 ```powershell
-docker rm -f test-selkies-v2 2>$null
+docker rm -f test-selkies-v3 2>$null
 $seccomp = (Resolve-Path "charts\robotics-infra\files\podman-rootless-seccomp.json").Path
-docker run -d --name test-selkies-v2 `
+docker run -d --name test-selkies-v3 `
   --gpus all --shm-size=4g `
   --cap-drop=ALL `
   --cap-add=SETUID --cap-add=SETGID --cap-add=CHOWN `
@@ -344,7 +360,7 @@ docker run -d --name test-selkies-v2 `
   --security-opt "seccomp=$seccomp" `
   --device /dev/net/tun:/dev/net/tun `
   -v selkies-podman-storage:/home/ubuntu/.local/share/containers `
-  -p 8080:8080 -p 2222:2222 -p 2223:2223 `
+  -p 8080:8080 -p 2222:2222 -p 2223:2223 -p 7448:7448 `
   -e TZ=Asia/Taipei `
   -e PASSWD="TestPassword123!" `
   -e SELKIES_ENABLE_BASIC_AUTH="true" `
@@ -352,13 +368,14 @@ docker run -d --name test-selkies-v2 `
   -e SELKIES_BASIC_AUTH_PASSWORD="TestPassword123!" `
   -e SELKIES_MODE="websockets" `
   -e ROS_DOMAIN_ID="11" `
-  fritingo/robot-infra:v2
+  fritingo/robot-infra:v3
 ```
 
 啟動約 15 秒後驗證：
 - **瀏覽器桌面**：`http://localhost:8080`（帳號 `dio` / 密碼 `TestPassword123!`）
 - **本機 SSH**：`ssh -p 2222 ubuntu@localhost`
 - **WebSocket SSH**：`ssh -o ProxyCommand="websocat --binary ws://localhost:2223" ubuntu@localhost`
+- **跨容器 ROS 2 橋接（CycloneDDS over WS）**：容器內執行 `ros-bridge serve --allow "/chatter"`，另一台主機執行 `ros-bridge connect ws://localhost:7448`
 
 ---
 
@@ -373,18 +390,23 @@ docker run -d --name test-selkies-v2 `
 | `airGapRtcConfig.enabled` | `true` | 建立空 `iceServers: []` 的共用 RTC ConfigMap（純內網必開） |
 | `airGapRtcConfig.name` | `"selkies-airgap-rtc-config"` | ConfigMap 名稱（須與 `k8s/base/deployment.yaml` 掛載名一致） |
 | `networkPolicy.enabled` | `true` | 啟用生產租戶隔離 NetworkPolicy（需 Calico / Cilium 等支援 NetworkPolicy 之 CNI） |
-| `networkPolicy.ingressNamespaceSelector` | `kubernetes.io/metadata.name: ingress-nginx` | 放行 Ingress-NGINX 存取容器 TCP `8080` 與 `2223` |
+| `networkPolicy.ingressNamespaceSelector` | `kubernetes.io/metadata.name: ingress-nginx` | 放行 Ingress-NGINX 存取容器 TCP `8080`、`2223`（`/ssh`）與 `7448`（`/zenoh`） |
+| `networkPolicy.allowEgressToIngress` | `true` | 放行使用者 Pod Egress 連至 Ingress Controller Pod（解決 Calico/Cilium DNAT 後阻斷 `ros-bridge connect wss://...` 之盲區） |
 | `networkPolicy.allowWebrtcUdpMux` | `true` | 是否放行辦公網段直連 WebRTC UDP Mux 埠段 |
 | `networkPolicy.webrtcUdpPortStart` / `End` | `50000` / `51000` | 放行的 UDP 埠段範圍 |
 | `networkPolicy.clientCidrs` | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` | 允許直連 WebRTC UDP Mux 的內網辦公 CIDR 清單 |
 | `networkPolicy.podCidr` | `"10.244.0.0/16"` | 叢集 Pod CIDR（用於 Egress `except`，阻斷跨使用者 Pod 橫向互連） |
 | `networkPolicy.allowedEgressCidrs` | 內網 RFC1918 網段 | 允許容器主動連線的內網服務（私有 Harbor、Git、PyPI 鏡像等） |
 | `networkPolicy.blockedEgressCidrs` | `["169.254.169.254/32"]` | 永遠封鎖雲端／本機 Metadata IP |
+| `rosZenohHub.enabled` | `false` | 啟用叢集共用跨 Pod 星狀 Zenoh Hub（搭配 `k8s/components/cross-pod-ros` 供 `ros-bridge hub` 免查 Service） |
+| `rosZenohHub.placement` | `"pro6000"` | 無純 CPU 節點時集中排程於 PRO 6000 節點（`NVIDIA_VISIBLE_DEVICES=void`，佔 **0 GPU**）；日後有 CPU 節點可切換 `"cpu-only"` |
+| `rosZenohHub.ingress.enabled` / `authSecretName` | `false` / `""` | 選配對外 `wss://ros-hub.selkies.local/zenoh`；開啟時強烈建議設定 `authSecretName`（Basic Auth）或 `whitelistSourceRange` |
 | `limitRange.enabled` | `true` | 啟用 Namespace 單容器資源防呆上下限 |
 | `limitRange.maxCpu` / `maxMemory` | `"32"` / `"128Gi"` | 單容器允許申請的最大 CPU / 記憶體 |
 | `limitRange.defaultRequestCpu` / `Memory` | `"2"` / `"8Gi"` | 未指定 requests 時的預設值 |
 | `limitRange.defaultLimitCpu` / `Memory` | `"8"` / `"32Gi"` | 未指定 limits 時的預設值 |
 | `coturn.enabled` | `false` | 是否啟用叢集共用內部 Coturn（隔離私網無法用 UDP Mux 時改 `true`） |
+| `coturn.placement` | `"pro6000"` | 集中於 PRO 6000 節點（佔 0 GPU）或切換 `"edge"`（獨立邊界節點） |
 | `coturn.image.repository` / `tag` | `registry.local/robotics/coturn` / `4.6.2-alpine-patched` | 內網私有 Coturn 映像檔（可用 `coturn/Dockerfile` 自建） |
 | `coturn.nodeSelector` | `kubernetes.io/hostname: "edge-node-01"` | 固定將 Coturn 排程至具備內網對外 IP 的邊界節點 |
 | `coturn.externalIp` | `"192.168.10.50"` | 邊界節點 IP（宣告為 TURN 中繼位址） |
@@ -424,10 +446,10 @@ kubectl -n robotics get configmap,networkpolicy,limitrange
 日常新增、調整或刪除開發者完全不需 Helm，直接以 `kubectl apply -k` 操作 `k8s/users/`。
 
 ### 7.1 `k8s/base/` 預設基線參數
-- **Deployment (`k8s/base/deployment.yaml`)**：`strategy.type: Recreate`（避免 RWO PVC / MIG / UDP hostPort 衝突）、`image: registry.local/robotics/robot-infra:v2`、`nodeSelector: gpu.capability/rtx-gfx: "true"`、預設 MIG `nvidia.com/mig-1g.24gb.gfx: 1`、`requests: 4C/16Gi`、`limits: 8C/32Gi`、`/dev/shm: 8Gi`。
+- **Deployment (`k8s/base/deployment.yaml`)**：`strategy.type: Recreate`（避免 RWO PVC / MIG / UDP hostPort 衝突）、`image: registry.local/robotics/robot-infra:v3`、`nodeSelector`（`robot-infra/gpu-pool: rtx-pro-6000` + `gpu.capability/rtx-gfx: "true"`）+ `nodeAffinity`（強制 `NotIn` 排除 A100/H100/H200/B200/B300/GB200/GB300）、預設 MIG `nvidia.com/mig-1g.24gb.gfx: 1`、`requests: 4C/16Gi`、`limits: 8C/32Gi`、`/dev/shm: 8Gi`。
 - **PVC (`k8s/base/pvc.yaml`)**：`selkies-pvc`（`100Gi`、`local-path` → `/home/ubuntu`）、`selkies-podman-pvc`（`80Gi`、`local-path` → `/home/ubuntu/.local/share/containers`）。
-- **Service (`k8s/base/service.yaml`)**：純 `ClusterIP`（`80→8080`、`2223→2223`、`2222→2222`），零 NodePort。
-- **Ingress (`k8s/base/ingress.yaml`)**：`ingressClassName: nginx`、`proxy-read/send-timeout: 3600`、`proxy-buffering: off`、`/ssh` (Exact → 2223) 與 `/` (Prefix → 80)。
+- **Service (`k8s/base/service.yaml`)**：純 `ClusterIP`（`80→8080`、`2223→2223`、`2222→2222`、`7448→7448`），零 NodePort。
+- **Ingress (`k8s/base/ingress.yaml`)**：`ingressClassName: nginx`、`proxy-read/send-timeout: 3600`、`proxy-buffering: off`、`/ssh` (Exact → 2223)、`/zenoh` (Exact → 7448) 與 `/` (Prefix → 80)。
 
 ### 7.2 每個使用者目錄可控檔案（`k8s/users/<user>/`）
 
@@ -542,12 +564,12 @@ NAMESPACE=robotics ./deploy/deploy.sh dio --dry-run  # 預演並指定 Namespace
 | 參數群組 | 主要可控鍵值與預設值 |
 | --- | --- |
 | `user.*` | `name`, `enabled`, `timezone` (`Asia/Taipei`), `rosDomainId` (`11`), `auth.{existingSecretName, webUsername, webPassword, linuxPassword}`, `extraEnv` |
-| `image.*` | `repository` (`registry.local/robotics/robot-infra`), `tag` (`v2`), `pullPolicy` (`IfNotPresent`), `pullSecrets` |
+| `image.*` | `repository` (`registry.local/robotics/robot-infra`), `tag` (`v3`), `pullPolicy` (`IfNotPresent`), `pullSecrets` |
 | `selkies.*` | `webPort` (`8080`), `encoder`, `framerate` (`60`), `videoBitrate` (`12000`), `audioBitrate` (`""`), `enableResize`, `enableBasicAuth`, `enableHttps`, `webrtcPacer` |
 | `transport.*` | `mode` (`webrtc-udp-mux` \| `webrtc-coturn` \| `websockets`), `enableDualMode` (`true`), `airGappedNoExternalStun` (`true`), `udpMuxPort` (`50001`), `tcpMuxPort` (`0`), `publicIpOverride`, `coturn.*` |
-| `ssh.*` | `enabled` (`true`), `mode` (`ingress-ws` \| `tcp-ingress`), `sshdPort` (`2222`), `wsBridgePort` (`2223`), `ingressPath` (`"/ssh"`) |
+| `ssh.*` & `rosBridge.*` | `ssh.{enabled, mode, sshdPort, wsBridgePort, ingressPath}`、`rosBridge.{enabled, wsBridgePort: 7448, ingressPath: "/zenoh", hubEndpoint, hubWssUrl, insecureTls}` |
 | `ingress.*` | `enabled`, `className` (`nginx`), `routingMode` (`subdomain` \| `subfolder` — `subfolder` 免 Wildcard DNS!), `baseDomain`, `host`, `tls.{enabled, secretName}`, `extraAnnotations` |
-| `gpu.*` & `resources.*` | `gpu.{enabled, resourceName, count, nodeSelector}`, `resources.{requests, limits}`, `shmSizeLimit` (`8Gi`) |
+| `gpu.*` & `resources.*` | `gpu.{enabled, pro6000Only: true, resourceName, count, nodeSelector}`, `resources.{requests, limits}`, `shmSizeLimit` (`8Gi`) |
 | `storage.*` & `podman.*` | `personalPvc.{enabled, storageClassName, size, mountPath, keepOnDelete}`, `sharedIsaacPvc.*`, `sharedIsaacAssetsPvc.*`, `podman.{enabled, mountTun, storage.*, env}` |
 | `podSecurityContext` / `containerSecurityContext` | `runAsUser/Group/fsGroup: 1000`, `seccompProfile`, `privileged: false`, `capabilities` |
 
@@ -591,28 +613,28 @@ Host dio-robot
 接著執行 `ssh dio-robot` 或以 VS Code Remote-SSH 選擇 `dio-robot` 即可連線（支援密碼或將公鑰放入 `~/.ssh/authorized_keys`）。
 
 ### 10.2 ROS 2 Jazzy、Python 與 `sudo`
-- 終端機自動載入 ROS 2 Jazzy + `rmw_zenoh_cpp`（256MB SHM）：直接執行 `ros2 topic list`、`colcon build`。
+- 終端機自動載入 ROS 2 Jazzy + 預設 **`rmw_cyclonedds_cpp`**（`/etc/ros/cyclonedds.xml` 鎖定 `lo`，與內層 `mig-podman`/Docker 直接互通且零跨 Pod 外洩）：直接執行 `ros2 topic list`、`colcon build`；跨 Pod 或跨實體機互通請用 `ros-bridge serve` / `connect` / `hub`。
 - Python 3.12 已預裝 `python3-venv`、`python3-full`、`pipx` 與 `/etc/pip.conf`（`break-system-packages = true`）：支援 `python3 -m venv ~/venvs/dev` 與直接 `pip3 install`。
 - `sudo` 為安全更新後的真實 setuid-root `sudo`。
 
 ### 10.3 離線內網映像檔同步
 - **方式 A（中繼機推送至內網 Harbor）**：
   ```bash
-  docker pull fritingo/robot-infra:v2
-  docker tag fritingo/robot-infra:v2 harbor.company.com/robotics/robot-infra:v2
-  docker push harbor.company.com/robotics/robot-infra:v2
+  docker pull fritingo/robot-infra:v3
+  docker tag fritingo/robot-infra:v3 harbor.company.com/robotics/robot-infra:v3
+  docker push harbor.company.com/robotics/robot-infra:v3
   ```
 - **方式 B（離線 `docker save` / `load` / `ctr`）**：
   ```bash
   # 匯出
-  docker save fritingo/robot-infra:v2 -o robot-infra-v2.tar
-  sha256sum robot-infra-v2.tar > robot-infra-v2.tar.sha256
+  docker save fritingo/robot-infra:v3 -o robot-infra-v3.tar
+  sha256sum robot-infra-v3.tar > robot-infra-v3.tar.sha256
 
   # 內網校驗並匯入（依節點 Runtime 三擇一）
-  sha256sum -c robot-infra-v2.tar.sha256
-  docker load -i robot-infra-v2.tar
-  podman load -i robot-infra-v2.tar
-  sudo ctr -n k8s.io images import robot-infra-v2.tar
+  sha256sum -c robot-infra-v3.tar.sha256
+  docker load -i robot-infra-v3.tar
+  podman load -i robot-infra-v3.tar
+  sudo ctr -n k8s.io images import robot-infra-v3.tar
   ```
 
 ---
@@ -626,7 +648,7 @@ Host dio-robot
 - 客製 Seccomp Profile：[podman-rootless-seccomp.json](./charts/robotics-infra/files/podman-rootless-seccomp.json) 封鎖 45 項高危 syscall（`bpf`、`io_uring_*`、`ptrace`、`kexec_load`、`keyctl`/`add_key`/`request_key`、`init_module` 等）
 - 租戶隔離 `NetworkPolicy`（禁止跨使用者 Pod 互連、封鎖 `169.254.169.254/32`）與 `LimitRange`
 
-### 11.2 Trivy CVE 修補成果（`fritingo/robot-infra:v2`）
+### 11.2 Trivy CVE 修補成果（`fritingo/robot-infra:v3`）
 
 | 嚴重等級 | 修補前總計（可修補） | 修補後總計（可修補） | 修補說明 |
 | --- | ---: | ---: | --- |
@@ -636,11 +658,11 @@ Host dio-robot
 | **LOW** | 2,520（1,875） | **646（1\*）** | 實質可修補 LOW 清零（1 項為 Firefox 誤報） |
 | **Python / `ipp-usb`** | 44 / 77 | **0 / 0** | `pillow 13.0.0`、`msgpack 1.2.4` 與移除 `ipp-usb` 後全數清零 |
 
-- **已修補並推送之 Docker Hub Digest**：`docker.io/fritingo/robot-infra:v2@sha256:804d53b0c0be4d83fec0a9b60303290fd9e1165c7de59ece58094fb1f2889cf8`
+- **已修補並推送之 Docker Hub Digest**：`docker.io/fritingo/robot-infra:v3@sha256:d2a8deed78b87ed47272164333325b4c10ae30650061dc13cd32ae66f3730d9e`
 - **本機覆驗指令**：
   ```bash
   docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-    aquasec/trivy:latest image --ignore-unfixed --severity CRITICAL,HIGH fritingo/robot-infra:v2
+    aquasec/trivy:latest image --ignore-unfixed --severity CRITICAL,HIGH fritingo/robot-infra:v3
   ```
 
 ---
