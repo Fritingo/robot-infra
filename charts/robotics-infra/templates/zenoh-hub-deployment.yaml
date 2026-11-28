@@ -143,6 +143,52 @@ spec:
             limits:
               cpu: "500m"
               memory: "256Mi"
+        {{- if and .Values.monitoring .Values.monitoring.exporterConfigMap .Values.monitoring.exporterConfigMap.enabled }}
+        - name: metrics-exporter
+          image: "{{ .Values.rosZenohHub.image.repository }}:{{ .Values.rosZenohHub.image.tag }}"
+          imagePullPolicy: {{ .Values.rosZenohHub.image.pullPolicy }}
+          command:
+            - python3
+            - /opt/monitoring/robot_metrics_exporter.py
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
+            - name: EXPORTER_MODE
+              value: "zenoh-hub"
+            - name: EXPORTER_PORT
+              value: "9108"
+            - name: ZENOH_TCP_PORT
+              value: {{ .Values.rosZenohHub.tcpPort | default 7447 | quote }}
+            - name: ZENOH_WS_PORT
+              value: {{ .Values.rosZenohHub.wsPort | default 7448 | quote }}
+          ports:
+            - name: metrics
+              containerPort: 9108
+              protocol: TCP
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          volumeMounts:
+            - name: metrics-exporter-script
+              mountPath: /opt/monitoring
+              readOnly: true
+      volumes:
+        - name: metrics-exporter-script
+          configMap:
+            name: {{ .Values.monitoring.exporterConfigMap.name | default "selkies-metrics-exporter" }}
+            defaultMode: 0444
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -165,6 +211,12 @@ spec:
       port: {{ .Values.rosZenohHub.wsPort | default 7448 }}
       targetPort: zenoh-ws
       protocol: TCP
+    {{- if and .Values.monitoring .Values.monitoring.exporterConfigMap .Values.monitoring.exporterConfigMap.enabled }}
+    - name: metrics
+      port: 9108
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
 {{- if .Values.rosZenohHub.ingress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

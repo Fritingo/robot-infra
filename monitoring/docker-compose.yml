@@ -1,0 +1,146 @@
+# ==============================================================================
+# Robot-Infra v3 本機測試專用監控套件（Selkies v3 + Metrics Sidecar + Prometheus + Grafana）
+# 適用情境：測試用電腦沒有 K8s / kube-prometheus-stack 時，一鍵啟動完整監控與儀表板
+# 啟動：docker compose -f monitoring/docker-compose.yml up -d
+# 停止：docker compose -f monitoring/docker-compose.yml down
+#
+# 服務入口：
+#   - Selkies Web 桌面：http://localhost:8080  (帳號 dio / 密碼 TestPassword123!)
+#   - Grafana 儀表板：  http://localhost:3000  (帳號 admin / 密碼 robot-infra-admin)
+#   - Prometheus UI：   http://localhost:9090
+#   - Metrics Sidecar： http://localhost:9108/metrics
+# ==============================================================================
+
+services:
+  selkies:
+    image: fritingo/robot-infra:v3
+    container_name: robot-infra-v3-selkies
+    shm_size: "4g"
+    ipc: "shareable"
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+      - AUDIT_WRITE
+    security_opt:
+      - seccomp=../charts/robotics-infra/files/podman-rootless-seccomp.json
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "8080:8080"
+      - "2222:2222"
+      - "2223:2223"
+      - "7448:7448"
+      - "9108:9108"
+    environment:
+      TZ: "Asia/Taipei"
+      PASSWD: "TestPassword123!"
+      SELKIES_ENABLE_BASIC_AUTH: "true"
+      SELKIES_BASIC_AUTH_USER: "dio"
+      SELKIES_BASIC_AUTH_PASSWORD: "TestPassword123!"
+      SELKIES_MODE: "websockets"
+      SELKIES_ENABLE_DUAL_MODE: "true"
+      SELKIES_ENABLE_METRICS_HTTP: "true"
+      ROS_DOMAIN_ID: "11"
+    volumes:
+      - selkies-home-local:/home/ubuntu
+      - selkies-podman-local:/home/ubuntu/.local/share/containers
+    networks:
+      - robot-monitoring
+
+  metrics-exporter:
+    image: fritingo/robot-infra:v3
+    container_name: robot-infra-v3-metrics-exporter
+    # 與 selkies 共享網路與 IPC 命名空間（等同 K8s 同 Pod Sidecar：可直連 127.0.0.1:8080、讀取 /proc/net/tcp 與共享 4G /dev/shm）
+    network_mode: "service:selkies"
+    ipc: "service:selkies"
+    depends_on:
+      - selkies
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [utility]
+    entrypoint: ["python3", "/opt/monitoring/robot_metrics_exporter.py"]
+    environment:
+      EXPORTER_MODE: "selkies"
+      EXPORTER_PORT: "9108"
+      SELKIES_PORT: "8080"
+      SELKIES_BASIC_AUTH_USER: "dio"
+      SELKIES_BASIC_AUTH_PASSWORD: "TestPassword123!"
+      # 本機測試無 cAdvisor/DCGM，開啟容器本機記憶體/CPU/網路/GPU 補齊；K8s 生產環境此值為 false
+      ENABLE_LOCAL_HOST_METRICS: "true"
+    volumes:
+      - ./exporter/robot_metrics_exporter.py:/opt/monitoring/robot_metrics_exporter.py:ro
+      - selkies-home-local:/home/ubuntu:ro
+      - selkies-podman-local:/home/ubuntu/.local/share/containers:ro
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: robot-infra-v3-prometheus
+    depends_on:
+      - metrics-exporter
+    ports:
+      - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data-local:/prometheus
+    networks:
+      - robot-monitoring
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: robot-infra-v3-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "robot-infra-admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/var/lib/grafana/dashboards/robot-infra-v3.json"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data-local:/var/lib/grafana
+    networks:
+      - robot-monitoring
+
+volumes:
+  selkies-home-local:
+  selkies-podman-local:
+  prometheus-data-local:
+  grafana-data-local:
+
+networks:
+  robot-monitoring:
+    driver: bridge

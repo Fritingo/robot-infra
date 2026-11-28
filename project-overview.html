@@ -720,9 +720,10 @@ SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
 │   ├── selkies-user/                          <span class="cmt"># （選配）全 Helm 版單使用者 Chart</span>
 │   └── coturn-infra/                          <span class="cmt"># （選配）獨立 Coturn Helm Chart</span>
 ├── <span class="dir">k8s/</span>                                       <span class="cmt"># ★ 使用者層純 kubectl apply -k（免 Helm）</span>
-│   ├── base/                                  <span class="cmt">#   pvc / deployment / service / ingress</span>
-│   ├── components/                            <span class="cmt">#   seccomp-podman-localhost / shared-isaac-sim / transport-websockets / apparmor-unconfined</span>
+│   ├── base/                                  <span class="cmt">#   pvc / deployment（PRO 6000 三重鎖定）/ service / ingress</span>
+│   ├── components/                            <span class="cmt">#   7 個積木（含 monitoring / cross-pod-ros / smarter-device-tun / seccomp 等）</span>
 │   └── users/                                 <span class="cmt">#   dio/、alice/ 與批次 kustomization.yaml</span>
+├── <span class="dir">monitoring/</span>                                <span class="cmt"># ★ Prometheus + Grafana（本機一鍵 Compose + :9108 Sidecar + 22 面板離線 Dashboard）</span>
 ├── <span class="dir">coturn/</span>                                    <span class="cmt"># 內網自建 Coturn Dockerfile</span>
 └── <span class="dir">deploy/</span>
     ├── gpu-operator/custom-mig-parted-config.yaml <span class="cmt"># RTX PRO 6000 Blackwell +gfx MIG 切分</span>
@@ -842,6 +843,9 @@ SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
               <tr><td><code>coturn.existingSecretName / sharedSecret</code></td><td><code>""</code></td><td>TURN HMAC 密鑰（生產環境務必使用 <code>existingSecretName</code>）</td></tr>
               <tr><td><code>rosZenohHub.enabled</code> / <code>placement</code></td><td><code>false</code> / <code>"pro6000"</code></td><td>啟用跨 Pod 星狀共用 Hub；<code>pro6000</code> 集中於 PRO 6000 節點（佔 0 GPU，同節點流量 &lt;0.2ms），有 CPU 節點時可切 <code>cpu-only</code></td></tr>
               <tr><td><code>rosZenohHub.ingress.*</code></td><td><code>enabled: false</code> / <code>authSecretName</code> / <code>whitelistSourceRange</code></td><td>預設純叢集內部 ClusterIP；對外開啟 <code>wss://zenoh.selkies.local/zenoh</code> 時支援 Basic Auth 與來源網段白名單</td></tr>
+              <tr><td><code>networkPolicy.allowMonitoringScrape</code></td><td><code>true</code>（TCP <code>9108</code>）</td><td>放行生產既有 <code>monitoring</code> Namespace 抓取 Sidecar <code>:9108/metrics</code>（絕不經 Ingress 對外暴露）</td></tr>
+              <tr><td><code>monitoring.exporterConfigMap.enabled</code></td><td><code>true</code>（<code>selkies-metrics-exporter</code>）</td><td>建立共用 Python 零依賴 Sidecar 腳本 ConfigMap（免重建映像、本機 Basic Auth 橋接並清洗高基數 <code>webrtc_statistics_info</code>）</td></tr>
+              <tr><td><code>monitoring.serviceMonitor / prometheusRule / grafanaDashboard</code></td><td><code>enabled: false</code></td><td>生產叢集已有 <code>kube-prometheus-stack</code> 時設為 <code>true</code>，自動建立 <code>ServiceMonitor</code>、12 條告警與離線 22 面板 Grafana Dashboard ConfigMap</td></tr>
             </tbody>
           </table>
         </div>
@@ -865,7 +869,7 @@ SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
           </table>
         </div>
 
-        <h3>六個可插拔 Kustomize Components（<code>k8s/components/</code>）</h3>
+        <h3>七個可插拔 Kustomize Components（<code>k8s/components/</code>）</h3>
         <div class="table-wrap">
           <table class="param-table">
             <thead><tr><th>Component 路徑</th><th>修改的 Kubernetes 欄位</th><th>使用時機</th></tr></thead>
@@ -873,6 +877,7 @@ SELKIES_RTC_CONFIG_JSON=/etc/selkies/rtc-config.json</code></pre>
               <tr><td><code>../../components/seccomp-podman-localhost</code></td><td><code>seccompProfile: {type: Localhost, localhostProfile: profiles/podman-rootless.json}</code></td><td><strong>Linux 生產必開</strong>：取代 <code>Unconfined</code>，封鎖 45 項高危 syscall</td></tr>
               <tr><td><code>../../components/smarter-device-tun</code></td><td>移除 <code>hostPath: /dev/net/tun</code>，改申請 <code>smarter-devices/net_tun: 1</code></td><td><strong>OPA Gatekeeper 禁止 <code>hostPath</code> 必開</strong>（<code>smarter-device-manager</code> 僅鎖 PRO 6000 節點）</td></tr>
               <tr><td><code>../../components/cross-pod-ros</code></td><td>注入 <code>ROS_BRIDGE_HUB_ENDPOINT</code> 與 <code>ROS_BRIDGE_HUB_WSS_URL</code></td><td>搭配 <code>rosZenohHub.enabled=true</code>，執行 <code>ros-bridge hub</code> 免查 K8s Service</td></tr>
+              <tr><td><code>../../components/monitoring</code></td><td>開啟 <code>SELKIES_ENABLE_METRICS_HTTP=true</code> 並掛載 <code>:9108</code> Read-Only Sidecar（複用同映像、0 GPU）</td><td>對接生產 <code>kube-prometheus-stack</code>，監控 FPS、RTT、掉幀、記憶體、<code>/dev/shm</code>、PVC 與服務健康</td></tr>
               <tr><td><code>../../components/shared-isaac-sim</code></td><td>唯讀掛載 <code>isaac-sim-6-2-shared-ro-pvc</code>（<code>/opt/isaac-sim</code>）與 <code>isaac-sim-6-2-assets-ro-pvc</code>（<code>/opt/isaac-sim-assets</code>）</td><td>需要執行 Isaac Sim 6.2 模擬的使用者</td></tr>
               <tr><td><code>../../components/transport-websockets</code></td><td>移除 <code>ports[3]</code>（UDP hostPort），改 <code>SELKIES_MODE=websockets</code>、<code>ENABLE_DUAL_MODE=false</code>、<code>ICE_LITE=false</code></td><td>防火牆完全封鎖 UDP，改走純 TCP 443</td></tr>
               <tr><td><code>../../components/apparmor-unconfined</code></td><td><code>appArmorProfile: {type: Unconfined}</code>（K8s 1.30+ GA）</td><td>Ubuntu 24.04 Linux 節點開啟 unprivileged userns AppArmor 限制時必開</td></tr>
@@ -1045,6 +1050,7 @@ supervisorctl tail -f sshd stderr</code></pre>
         <button class="tab-btn" data-tab="d-infra">2. K8s Infra（Helm）</button>
         <button class="tab-btn" data-tab="d-user">3. 新增使用者（kubectl apply -k）</button>
         <button class="tab-btn" data-tab="d-mig">4. MIG、Seccomp 與 OPA 前置</button>
+        <button class="tab-btn" data-tab="d-mon">5. Prometheus &amp; Grafana 監控</button>
       </div>
 
       <div class="tab-panel active" data-panel="d-local">
@@ -1127,6 +1133,32 @@ sudo ufw allow proto udp from 10.0.0.0/8 to any port 50000:51000</code></pre>
           • <strong>單張 PRO 6000 節點建議規格（3～4 人 + Hub）</strong>：<strong>CPU ≥ 32 vCPU</strong>（重度模擬建議 48–64 vCPU）、<strong>RAM ≥ 128 GiB</strong>（多 Isaac Sim 建議 192–256 GiB，含 <code>/dev/shm</code>）、<strong>NVMe SSD ≥ 1–1.5 TB</strong>、<code>podPidsLimit ≥ 4096</code>。<br/>
           • <strong><code>mig.strategy: single</code> vs <code>mixed</code></strong>：若既有 H200/H100/A100/B300 已在 <code>single</code> 策略啟用 MIG，切勿改全叢集 <code>mig.strategy</code>；PRO 6000 改套 <code>all-2g.48gb.gfx</code> 並申請 <code>nvidia.com/gpu: 1</code>。<br/>
           • <strong>Ubuntu 24.04 AppArmor / OPA</strong>：視需求啟用 <code>components/apparmor-unconfined</code> 與 <code>components/smarter-device-tun</code>。
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="d-mon">
+        <div class="code-block">
+          <div class="code-header"><span>生產 Linux K8s — 對接既有 kube-prometheus-stack（零額外 Server、嚴格隔離 PRO 6000）</span><button class="copy-btn">複製</button></div>
+          <pre><code># 1. 啟用 ServiceMonitor、12 條告警 PrometheusRule 與離線 22 面板 Grafana Dashboard ConfigMap
+helm upgrade --install robotics-infra ./charts/robotics-infra -n robotics \
+  --set monitoring.serviceMonitor.enabled=true \
+  --set monitoring.prometheusRule.enabled=true \
+  --set monitoring.grafanaDashboard.enabled=true
+
+# 2. 於使用者 k8s/users/&lt;user&gt;/kustomization.yaml 啟用 ../../components/monitoring 後套用
+kubectl apply -k k8s/users/dio</code></pre>
+        </div>
+        <div class="code-block">
+          <div class="code-header"><span>本機測試機（無 K8s）— 一鍵啟動 Selkies v3 + Exporter + Prometheus + Grafana</span><button class="copy-btn">複製</button></div>
+          <pre><code>docker compose -f monitoring/docker-compose.yml up -d
+# Grafana 儀表板：http://localhost:3000  (admin / robot-infra-admin，自動預載 22 面板 Dashboard)
+# Prometheus UI ：http://localhost:9090  |  Exporter 原始指標：http://localhost:9108/metrics
+# Selkies 桌面  ：http://localhost:8080  (dio / TestPassword123!)
+
+docker compose -f monitoring/docker-compose.yml down -v   # 測試完畢一鍵清除</code></pre>
+        </div>
+        <div class="callout ok">
+          <strong>監控亮點與防呆：</strong>Sidecar (<code>:9108/metrics</code>) 複用同映像且佔 <strong>0 GPU</strong>，在 Pod 本機完成 Selkies Basic Auth（Prometheus 免讀使用者密碼），並即時清洗高基數 <code>webrtc_statistics_info</code> 防止 TSDB 爆量；同時涵蓋 <strong>FPS、RTT 延遲、掉幀、MIG VRAM/NVENC、Memory、/dev/shm、CPU Throttling、PVC、Podman 與 ros-bridge</strong>。
         </div>
       </div>
     </section>

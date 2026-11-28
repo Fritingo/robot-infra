@@ -1,0 +1,882 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Robot-Infra v3 多使用者機器人 GPU 開發平台全棧監控（Selkies v2.2.1 FPS/RTT/Pacer + RTX PRO 6000 MIG/NVENC + Memory/SHM/CPU Throttling/PVC + Podman/ROS2 Bridge；嚴格隔離 robotics 與 PRO 6000）",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "1. 平台總覽與 RTX PRO 6000 節點健康（Overview）",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 101,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count(robot_selkies_up{namespace=~\"$namespace\",user=~\"$user\"} == 1) or vector(0)",
+          "legendFormat": "Online",
+          "refId": "A"
+        }
+      ],
+      "title": "線上桌面數",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "red", "value": 0.1 },
+              { "color": "yellow", "value": 20 },
+              { "color": "green", "value": 45 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 102,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "avg(fps{namespace=~\"$namespace\",user=~\"$user\"} > 0) or avg(fps{namespace=~\"$namespace\",user=~\"$user\"})",
+          "legendFormat": "Avg FPS",
+          "refId": "A"
+        }
+      ],
+      "title": "平均串流 FPS",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 150 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 103,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "avg(latency{namespace=~\"$namespace\",user=~\"$user\"} > 0) or avg(latency{namespace=~\"$namespace\",user=~\"$user\"})",
+          "legendFormat": "Avg RTT",
+          "refId": "A"
+        }
+      ],
+      "title": "平均網路延遲（RTT）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200000000 },
+              { "color": "red", "value": 500000000 }
+            ]
+          },
+          "unit": "bps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 104,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(webrtc_pacer_pace_bps{namespace=~\"$namespace\",user=~\"$user\"}) or sum(rate(container_network_transmit_bytes_total{namespace=~\"$namespace\",pod=~\".*selkies.*\"}[1m]) * 8) or sum(rate(robot_local_network_transmit_bytes_total{namespace=~\"$namespace\",user=~\"$user\"}[1m]) * 8)",
+          "legendFormat": "Total TX",
+          "refId": "A"
+        }
+      ],
+      "title": "總串流對外頻寬",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 80 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 105,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "max(DCGM_FI_DEV_ENC_UTIL{exported_namespace=~\"$namespace\"}) or max(robot_local_gpu_encoder_utilization_percent{namespace=~\"$namespace\",user=~\"$user\"}) or vector(0)",
+          "legendFormat": "NVENC %",
+          "refId": "A"
+        }
+      ],
+      "title": "PRO 6000 NVENC 編碼負載",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 106,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(increase(DCGM_FI_DEV_XID_ERRORS{exported_namespace=~\"$namespace\"}[1h])) or vector(0)",
+          "legendFormat": "XID Errors",
+          "refId": "A"
+        }
+      ],
+      "title": "GPU XID 硬體錯誤（1h）",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 200,
+      "panels": [],
+      "title": "2. 串流體驗與網路延遲（Streaming QoE & Network）",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "green", "value": 45 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 201,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "mean", "min"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "fps{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} FPS",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "selkies_webrtc_client_fps{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} WebRTC Client FPS",
+          "refId": "B"
+        }
+      ],
+      "title": "即時畫面幀率（FPS）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 150 }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 202,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "latency{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} Latency (ms)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "selkies_webrtc_rtt_ms{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} WebRTC RTT (ms)",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "selkies_webrtc_jitter_ms{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} Jitter (ms)",
+          "refId": "C"
+        }
+      ],
+      "title": "網路延遲（RTT）與 WebRTC Jitter（ms）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "bps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 203,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "webrtc_pacer_pace_bps{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} Pacer ({{display}})",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "rate(container_network_transmit_bytes_total{namespace=~\"$namespace\",pod=~\".*selkies.*\"}[1m]) * 8 or rate(robot_local_network_transmit_bytes_total{namespace=~\"$namespace\",user=~\"$user\"}[1m]) * 8",
+          "legendFormat": "{{user}} {{pod}} TX",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "rate(container_network_receive_bytes_total{namespace=~\"$namespace\",pod=~\".*selkies.*\"}[1m]) * 8 or rate(robot_local_network_receive_bytes_total{namespace=~\"$namespace\",user=~\"$user\"}[1m]) * 8",
+          "legendFormat": "{{user}} {{pod}} RX",
+          "refId": "C"
+        }
+      ],
+      "title": "WebRTC 串流碼率與 Pod 網路頻寬（RX / TX）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 204,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "rate(webrtc_bridge_dropped_frames{namespace=~\"$namespace\",user=~\"$user\"}[2m])",
+          "legendFormat": "{{user}} Bridge Dropped Frames/s",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "rate(webrtc_pacer_events{namespace=~\"$namespace\",user=~\"$user\",event=~\"video_dropped|gop_resets\"}[2m])",
+          "legendFormat": "{{user}} Pacer {{event}}/s",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "rate(selkies_webrtc_packets_lost{namespace=~\"$namespace\",user=~\"$user\"}[2m])",
+          "legendFormat": "{{user}} WebRTC Packets Lost/s",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "rate(robot_local_network_transmit_dropped_total{namespace=~\"$namespace\",user=~\"$user\"}[2m]) + rate(robot_local_network_receive_dropped_total{namespace=~\"$namespace\",user=~\"$user\"}[2m])",
+          "legendFormat": "{{user}} Local Net Drops/s",
+          "refId": "D"
+        }
+      ],
+      "title": "伺服器掉幀、Pacer GOP 重置與封包遺失率",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "id": 300,
+      "panels": [],
+      "title": "3. 記憶體、/dev/shm、CPU Throttling 與 PVC 儲存（Compute & Storage）",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 14, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 301,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "container_memory_working_set_bytes{namespace=~\"$namespace\",container=\"selkies-desktop\"} or robot_local_memory_used_bytes{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} {{pod}} Memory Used",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "kube_pod_container_resource_limits{namespace=~\"$namespace\",container=\"selkies-desktop\",resource=\"memory\"} or robot_local_memory_limit_bytes{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} {{pod}} Memory Limit",
+          "refId": "B"
+        }
+      ],
+      "title": "容器記憶體使用量（Working Set vs Limit）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 14, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 302,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "robot_shm_used_bytes{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} /dev/shm Used",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "robot_shm_limit_bytes{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} /dev/shm Limit",
+          "refId": "B"
+        }
+      ],
+      "title": "/dev/shm 共享記憶體使用量（Isaac Sim / ROS 2 SHM）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*Throttled.*" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "unit", "value": "percent" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "id": 303,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container=\"selkies-desktop\"}[2m]) or rate(robot_local_cpu_usage_seconds_total{namespace=~\"$namespace\",user=~\"$user\"}[2m])",
+          "legendFormat": "{{user}} {{pod}} CPU Cores",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "((rate(container_cpu_cfs_throttled_periods_total{namespace=~\"$namespace\",container=\"selkies-desktop\"}[2m]) / clamp_min(rate(container_cpu_cfs_periods_total{namespace=~\"$namespace\",container=\"selkies-desktop\"}[2m]), 1)) * 100) or ((rate(robot_local_cpu_throttled_periods_total{namespace=~\"$namespace\",user=~\"$user\"}[2m]) / clamp_min(rate(robot_local_cpu_periods_total{namespace=~\"$namespace\",user=~\"$user\"}[2m]), 1)) * 100)",
+          "legendFormat": "{{user}} {{pod}} CPU Throttled %",
+          "refId": "B"
+        }
+      ],
+      "title": "CPU 核心使用量與 CFS Throttling（對照 colcon build 搶核）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "id": 304,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 14,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(kubelet_volume_stats_used_bytes{namespace=~\"$namespace\"} / clamp_min(kubelet_volume_stats_capacity_bytes{namespace=~\"$namespace\"}, 1)) * 100",
+          "legendFormat": "K8s PVC {{persistentvolumeclaim}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(robot_home_storage_used_bytes{namespace=~\"$namespace\",user=~\"$user\"} / clamp_min(robot_home_storage_total_bytes{namespace=~\"$namespace\",user=~\"$user\"}, 1)) * 100",
+          "legendFormat": "{{user}} /home/ubuntu",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(robot_podman_storage_used_bytes{namespace=~\"$namespace\",user=~\"$user\"} / clamp_min(robot_podman_storage_total_bytes{namespace=~\"$namespace\",user=~\"$user\"}, 1)) * 100",
+          "legendFormat": "{{user}} Podman Storage",
+          "refId": "C"
+        }
+      ],
+      "title": "個人 PVC（/home/ubuntu）與 Podman PVC 空間使用率（%）",
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "id": 400,
+      "panels": [],
+      "title": "4. RTX PRO 6000 MIG GPU、Podman 與 ROS 2 跨 Pod 橋接（GPU MIG & Robotics）",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 14, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "id": 401,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(DCGM_FI_DEV_FB_USED{exported_namespace=~\"$namespace\"} * 1048576) or robot_local_gpu_memory_used_bytes{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{exported_pod}} {{GPU_I_PROFILE}} {{modelName}} VRAM Used",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "((DCGM_FI_DEV_FB_USED{exported_namespace=~\"$namespace\"} + DCGM_FI_DEV_FB_FREE{exported_namespace=~\"$namespace\"}) * 1048576) or robot_local_gpu_memory_total_bytes{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{exported_pod}} {{GPU_I_PROFILE}} {{modelName}} VRAM Total",
+          "refId": "B"
+        }
+      ],
+      "title": "RTX PRO 6000 MIG / GPU 顯存（VRAM）使用量",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*Temp.*" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "unit", "value": "celsius" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "id": 402,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "DCGM_FI_DEV_GPU_UTIL{exported_namespace=~\"$namespace\"} or robot_local_gpu_utilization_percent{namespace=~\"$namespace\",user=~\"$user\"} or gpu_utilization{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{exported_pod}} {{user}} GPU Util %",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "DCGM_FI_DEV_ENC_UTIL{exported_namespace=~\"$namespace\"} or robot_local_gpu_encoder_utilization_percent{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{Hostname}} {{user}} NVENC %",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "DCGM_FI_DEV_GPU_TEMP{exported_namespace=~\"$namespace\"} or robot_local_gpu_temperature_celsius{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{Hostname}} {{user}} Temp °C",
+          "refId": "C"
+        }
+      ],
+      "title": "GPU 算力、NVENC 硬體編碼負載與溫度",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "color": "orange", "index": 0, "text": "IDLE / DOWN" }, "1": { "color": "green", "index": 1, "text": "LISTENING" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "id": 403,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "robot_service_port_listening{namespace=~\"$namespace\",user=~\"$user\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "app_kubernetes_io_component": true,
+              "container": true,
+              "endpoint": true,
+              "instance": true,
+              "job": true,
+              "namespace": true
+            },
+            "renameByName": {
+              "Value": "狀態",
+              "pod": "Pod",
+              "port": "TCP 埠號",
+              "service": "核心服務",
+              "user": "使用者"
+            }
+          }
+        }
+      ],
+      "title": "核心服務埠監聽健康表（selkies / sshd / ssh_ws / zenoh_ws / zenoh_bridge）",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "id": 404,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "robot_active_tcp_connections{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} {{service}} conns",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "robot_ros_bridge_active{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} ros-bridge active",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "robot_podman_containers_total{namespace=~\"$namespace\",user=~\"$user\"}",
+          "legendFormat": "{{user}} Podman containers",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "robot_zenoh_hub_active_connections{namespace=~\"$namespace\"}",
+          "legendFormat": "zenoh-hub {{service}} conns",
+          "refId": "D"
+        }
+      ],
+      "title": "活躍連線（Web / SSH / ros-bridge / zenoh-hub）與 Podman 子容器數",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["robot-infra", "v3", "selkies", "ros2", "rtx-pro-6000"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": { "selected": false, "text": "robotics", "value": "robotics" },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(robot_selkies_up, namespace)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Namespace",
+        "multi": false,
+        "name": "namespace",
+        "options": [],
+        "query": { "query": "label_values(robot_selkies_up, namespace)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(robot_selkies_up{namespace=~\"$namespace\"}, user)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "User",
+        "multi": true,
+        "name": "user",
+        "options": [],
+        "query": { "query": "label_values(robot_selkies_up{namespace=~\"$namespace\"}, user)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "Asia/Taipei",
+  "title": "Robot-Infra v3 — RTX PRO 6000 & Selkies ROS 2 監控總覽",
+  "uid": "robot-infra-v3-overview",
+  "version": 1,
+  "weekStart": ""
+}

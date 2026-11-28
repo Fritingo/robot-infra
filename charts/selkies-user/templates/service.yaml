@@ -31,4 +31,10 @@ spec:
       targetPort: zenoh-ws
       protocol: TCP
     {{- end }}
+    {{- if and .Values.monitoring .Values.monitoring.enabled }}
+    - name: metrics
+      port: {{ .Values.monitoring.port | default 9108 }}
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
 {{- end }}

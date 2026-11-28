@@ -114,14 +114,20 @@ robot-infra/
 │   └── coturn-infra/                             # （選配）獨立 Coturn Helm Chart
 ├── k8s/                                          # ★ 使用者層純 kubectl apply -k（免 Helm）
 │   ├── base/                                     # 共用基底：pvc / deployment（PRO 6000 三重鎖定）/ service / ingress
-│   ├── components/                               # 6 個可插拔 Kustomize 積木
+│   ├── components/                               # 7 個可插拔 Kustomize 積木
 │   │   ├── seccomp-podman-localhost/
 │   │   ├── smarter-device-tun/                   # OPA Gatekeeper 無 hostPath 取代 /dev/net/tun
 │   │   ├── cross-pod-ros/                        # 注入 Hub 端點供 ros-bridge hub 免查 Service
+│   │   ├── monitoring/                           # 啟用 Selkies /api/metrics + :9108 Sidecar（免改映像）
 │   │   ├── shared-isaac-sim/
 │   │   ├── transport-websockets/
 │   │   └── apparmor-unconfined/
 │   └── users/                                    # dio/、alice/ 與批次 kustomization.yaml
+├── monitoring/                                   # ★ Prometheus + Grafana 監控套件（生產對接 + 本機一鍵測試）
+│   ├── docker-compose.yml                        # 無 K8s 測試機專用：一鍵啟動 Selkies + Exporter + Prometheus + Grafana
+│   ├── exporter/robot_metrics_exporter.py        # 零依賴 :9108 Sidecar（Basic Auth 橋接、高基數清洗、SHM/Podman/ros-bridge）
+│   ├── prometheus/{prometheus.yml,alerts.yml}    # 本機抓取設定與 12 條實戰告警規則
+│   └── grafana/                                  # 100% 離線 Datasource 與 22 面板 Robot-Infra v3 Dashboard JSON
 ├── coturn/                                       # 內網自建 Coturn Dockerfile
 └── deploy/
     ├── gpu-operator/
@@ -392,6 +398,9 @@ docker run -d --name test-selkies-v3 `
 | `networkPolicy.enabled` | `true` | 啟用生產租戶隔離 NetworkPolicy（需 Calico / Cilium 等支援 NetworkPolicy 之 CNI） |
 | `networkPolicy.ingressNamespaceSelector` | `kubernetes.io/metadata.name: ingress-nginx` | 放行 Ingress-NGINX 存取容器 TCP `8080`、`2223`（`/ssh`）與 `7448`（`/zenoh`） |
 | `networkPolicy.allowEgressToIngress` | `true` | 放行使用者 Pod Egress 連至 Ingress Controller Pod（解決 Calico/Cilium DNAT 後阻斷 `ros-bridge connect wss://...` 之盲區） |
+| `networkPolicy.allowMonitoringScrape` / `monitoringMetricsPort` | `true` / `9108` | 放行生產既有 `monitoring` Namespace 的 Prometheus 抓取內部 Sidecar `:9108/metrics`（絕不經 Ingress 外露） |
+| `monitoring.exporterConfigMap.enabled` | `true` | 建立共用 `selkies-metrics-exporter` ConfigMap 供 `k8s/components/monitoring` 與 `zenoh-hub` 掛載（免重建映像） |
+| `monitoring.serviceMonitor.enabled` / `prometheusRule.enabled` / `grafanaDashboard.enabled` | `false` | 生產叢集已有 `kube-prometheus-stack` 時全設 `true`，自動建立 `ServiceMonitor`、12 條 `PrometheusRule` 告警與 `grafana_dashboard: "1"` 離線儀表板 ConfigMap |
 | `networkPolicy.allowWebrtcUdpMux` | `true` | 是否放行辦公網段直連 WebRTC UDP Mux 埠段 |
 | `networkPolicy.webrtcUdpPortStart` / `End` | `50000` / `51000` | 放行的 UDP 埠段範圍 |
 | `networkPolicy.clientCidrs` | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` | 允許直連 WebRTC UDP Mux 的內網辦公 CIDR 清單 |
@@ -459,7 +468,7 @@ kubectl -n robotics get configmap,networkpolicy,limitrange
 | `patch.yaml` | `SELKIES_BASIC_AUTH_USER`（登入帳號）、`SELKIES_WEBRTC_UDP_MUX_PORT`（唯一埠號）、`ROS_DOMAIN_ID`（唯一網域）、CPU/RAM 與 MIG 規格（例如覆寫為 `nvidia.com/mig-2g.48gb.gfx: 1` 並將原 `1g` 設 `null`）、個人與 Podman PVC 容量 |
 | `kustomization.yaml` | `namePrefix: <user>-`、`labels.pairs.app.kubernetes.io/user: <user>`、`components` 積木清單、Ingress `tls[0].hosts[0]` 與 `rules[0].host`、以及當 UDP 埠不為 `50001` 時用 JSON Patch 覆寫 `/spec/template/spec/containers/0/ports/3/containerPort` 與 `hostPort`（可參考 [k8s/users/alice/kustomization.yaml](./k8s/users/alice/kustomization.yaml)） |
 
-### 7.3 六個可插拔 Kustomize Components（`k8s/components/`）
+### 7.3 七個可插拔 Kustomize Components（`k8s/components/`）
 
 於 `k8s/users/<user>/kustomization.yaml` 的 `components:` 取消註解即可啟用：
 
@@ -468,6 +477,7 @@ kubectl -n robotics get configmap,networkpolicy,limitrange
 | `../../components/seccomp-podman-localhost` | 將 `seccompProfile` 由 `Unconfined` 切換為 `type: Localhost`、`localhostProfile: profiles/podman-rootless.json` | **Linux 生產環境強烈建議必開**（前提：已將 JSON 放到 PRO 6000 節點 `/var/lib/kubelet/seccomp/profiles/`） |
 | `../../components/smarter-device-tun` | 移除 `hostPath: /dev/net/tun` 並改於 `resources` 申請 `smarter-devices/net_tun: 1` | **OPA Gatekeeper 禁止 `hostPath` 的 Linux K8s 叢集必開**（`smarter-device-manager` 僅鎖定 PRO 6000 節點） |
 | `../../components/cross-pod-ros` | 注入 `ROS_BRIDGE_HUB_ENDPOINT`、`ROS_BRIDGE_HUB_WSS_URL`、`ROS_BRIDGE_INSECURE_TLS=1` | 搭配 `robotics-infra` 之 `rosZenohHub.enabled=true`，使用者輸入 `ros-bridge hub` 免查 K8s Service |
+| `../../components/monitoring` | 開啟 `SELKIES_ENABLE_METRICS_HTTP=true` 並掛載 `:9108` Read-Only Sidecar（複用同映像、0 GPU、清洗高基數 `webrtc_statistics_info`） | 納入生產 `kube-prometheus-stack`（Prometheus + Grafana）監控 FPS、RTT 延遲、記憶體、`/dev/shm`、PVC 與服務健康 |
 | `../../components/shared-isaac-sim` | 唯讀掛載 `isaac-sim-6-2-shared-ro-pvc` → `/opt/isaac-sim` 與 `isaac-sim-6-2-assets-ro-pvc` → `/opt/isaac-sim-assets` | 需要執行 Isaac Sim 6.2 的開發者 |
 | `../../components/transport-websockets` | 移除 `ports[3]`（UDP `hostPort`），並將 `SELKIES_MODE=websockets`、`SELKIES_ENABLE_DUAL_MODE=false`、`SELKIES_WEBRTC_ICE_LITE=false` | 防火牆全面封鎖 UDP，改走純 TCP 443 |
 | `../../components/apparmor-unconfined` | 設定 `securityContext.appArmorProfile.type: Unconfined`（K8s 1.30+ GA；K8s 1.28/1.29 改用 Annotation） | Ubuntu 24.04 Linux 宿主機開啟 `kernel.apparmor_restrict_unprivileged_userns=1` 時必開 |
@@ -636,6 +646,43 @@ Host dio-robot
   podman load -i robot-infra-v3.tar
   sudo ctr -n k8s.io images import robot-infra-v3.tar
   ```
+
+---
+
+## 10.5 Prometheus + Grafana 監控系統（生產對接既有棧 & 本機一鍵測試）
+
+本專案提供 **零重建主映像、零外洩使用者密碼、嚴格隔離 RTX PRO 6000 / `robotics` Namespace（不混入 H200/H100/A100/B300）** 的全棧監控設計：
+
+- **可觀測指標（6 大層級、22 個 Grafana 面板、12 條 Prometheus 告警）**：
+  1. **串流體驗 QoE**：Selkies v2.2.1 原生 `fps`、`fps_hist`、`latency`（RTT ms）、`webrtc_pacer_pace_bps`、`webrtc_pacer_queue_bytes`、`webrtc_bridge_dropped_frames`、`webrtc_pacer_events`，並由 `:9108` Sidecar 清洗高基數 `webrtc_statistics_info` 為安全數值指標（`selkies_webrtc_rtt_ms` / `jitter_ms` / `packets_lost` / `frames_dropped`），徹底防範 TSDB 爆量。
+  2. **RTX PRO 6000 MIG GPU**：直接復用既有 GPU Operator `dcgm-exporter`（強制過濾 `exported_namespace="robotics"`），追蹤每張 MIG 切片 VRAM、算力、NVENC 編碼負載、溫度與 XID 錯誤。
+  3. **計算、記憶體與 PVC**：容器 Memory Working Set vs Limit、`/dev/shm` 即時使用率（防 Isaac Sim / ROS 2 SHM 撐爆）、CPU CFS Throttling（抓 `colcon build` 搶核掉幀）、`/home/ubuntu` 與 Podman PVC 剩餘容量。
+  4. **服務健康與 ROS 2 橋接**：`selkies` / `sshd` / `ssh_ws` / `zenoh_ws` / `zenoh_bridge` 埠監聽狀態、活躍 TCP 連線數、`ros-bridge` 活動狀態與 Podman 容器數。
+
+### 方式 A：生產 Linux K8s（對接既有 `kube-prometheus-stack`，零額外 Server）
+```bash
+# 1. 啟用 ServiceMonitor、12 條 PrometheusRule 與 Grafana Dashboard ConfigMap
+#    （若叢集 Prometheus 依 release label 篩選，請加上 --set monitoring.serviceMonitor.additionalLabels.release=kube-prometheus-stack）
+helm upgrade --install robotics-infra ./charts/robotics-infra -n robotics \
+  --set monitoring.serviceMonitor.enabled=true \
+  --set monitoring.prometheusRule.enabled=true \
+  --set monitoring.grafanaDashboard.enabled=true
+
+# 2. 在使用者 k8s/users/<user>/kustomization.yaml 啟用 ../../components/monitoring 後套用
+kubectl apply -k k8s/users/dio
+```
+
+### 方式 B：本機測試電腦（無 K8s，一鍵啟動 Selkies v3 + Exporter + Prometheus + Grafana）
+```bash
+docker compose -f monitoring/docker-compose.yml up -d
+# 瀏覽器開啟：
+#   Selkies 桌面：http://localhost:8080  (dio / TestPassword123!)
+#   Grafana 儀表板：http://localhost:3000 (admin / robot-infra-admin，已自動預載 Robot-Infra v3 Dashboard)
+#   Prometheus UI：http://localhost:9090
+#   Exporter 原始指標：http://localhost:9108/metrics
+# 測試完畢清理：
+docker compose -f monitoring/docker-compose.yml down -v
+```
 
 ---
 

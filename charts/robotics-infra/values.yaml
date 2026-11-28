@@ -26,6 +26,11 @@ networkPolicy:
     - "192.168.0.0/16"
   # 允許 Pod 存取 Ingress-NGINX（供跨 Pod ros-bridge connect wss://<user>.selkies.local/zenoh 走 DNAT 443/8443）
   allowEgressToIngress: true
+  # 放行生產既有 Prometheus（kube-prometheus-stack）所在 Namespace 抓取使用者 Pod 內部 :9108/metrics（絕不經 Ingress 外露）
+  allowMonitoringScrape: true
+  monitoringNamespaceSelector:
+    kubernetes.io/metadata.name: monitoring
+  monitoringMetricsPort: 9108
   # 允許 Pod 主動存取的內網資源（例如私有 Registry、Git、PyPI 鏡像），同時阻斷跨使用者 Pod 橫向互連
   podCidr: "10.244.0.0/16"
   allowedEgressCidrs:
@@ -114,3 +119,26 @@ rosZenohHub:
     limits:
       cpu: "2"
       memory: "1Gi"
+
+# 6. 選配：Prometheus + Grafana 監控整合（專為生產既有 kube-prometheus-stack 設計，零額外 Server、零碰觸 H200/H100/A100/B300）
+#    - exporterConfigMap 預設啟用，供使用者 k8s/components/monitoring Sidecar (:9108/metrics) 直接掛載，免重建映像檔
+#    - 生產叢集已有 Prometheus Operator 時，將 serviceMonitor.enabled / prometheusRule.enabled / grafanaDashboard.enabled 設為 true 即可自動納管
+monitoring:
+  exporterConfigMap:
+    enabled: true
+    name: "selkies-metrics-exporter"
+  serviceMonitor:
+    enabled: false
+    interval: "15s"
+    scrapeTimeout: "10s"
+    # 若叢集 Prometheus 依 release label 篩選 ServiceMonitor，依現況填入（如 release: kube-prometheus-stack）
+    additionalLabels: {}
+  prometheusRule:
+    enabled: false
+    additionalLabels: {}
+  grafanaDashboard:
+    enabled: false
+    folder: "Robot-Infra v3"
+    sidecarLabel: "grafana_dashboard"
+    sidecarLabelValue: "1"
+    additionalLabels: {}

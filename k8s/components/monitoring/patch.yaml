@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selkies
+spec:
+  template:
+    spec:
+      containers:
+        - name: selkies-desktop
+          env:
+            - name: SELKIES_ENABLE_METRICS_HTTP
+              value: "true"
+        - name: metrics-exporter
+          image: registry.local/robotics/robot-infra:v3
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /opt/monitoring/robot_metrics_exporter.py
+          ports:
+            - name: metrics
+              containerPort: 9108
+              protocol: TCP
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
+            - name: EXPORTER_MODE
+              value: "selkies"
+            - name: EXPORTER_PORT
+              value: "9108"
+            - name: SELKIES_PORT
+              value: "8080"
+            - name: SELKIES_BASIC_AUTH_USER
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app.kubernetes.io/user']
+            - name: SELKIES_BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: selkies-auth
+                  key: WEB_PASSWORD
+            # K8s 生產環境由既有 cAdvisor 與 DCGM Exporter 提供資源與 MIG GPU 指標，此處保持 false 避免重複
+            - name: ENABLE_LOCAL_HOST_METRICS
+              value: "false"
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          volumeMounts:
+            - name: metrics-exporter-script
+              mountPath: /opt/monitoring
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+              readOnly: true
+            - name: personal-data
+              mountPath: /home/ubuntu
+              readOnly: true
+            - name: podman-storage
+              mountPath: /home/ubuntu/.local/share/containers
+              readOnly: true
+      volumes:
+        - name: metrics-exporter-script
+          configMap:
+            name: selkies-metrics-exporter
+            defaultMode: 0444
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selkies-svc
+spec:
+  ports:
+    - name: metrics
+      port: 9108
+      targetPort: metrics
+      protocol: TCP

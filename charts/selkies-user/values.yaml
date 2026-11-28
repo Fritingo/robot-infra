@@ -91,6 +91,12 @@ rosBridge:
   hubEndpoint: ""
   hubWssUrl: ""
 
+# 選配：Prometheus Metrics Sidecar（對應 charts/robotics-infra 建立之 selkies-metrics-exporter ConfigMap）
+monitoring:
+  enabled: false
+  port: 9108
+  exporterConfigMapName: "selkies-metrics-exporter"
+
 # ==============================================================================
 # Ingress-NGINX（單一 IP 多人分流，無需每人配獨立 IP）
 #   routingMode: "subdomain" -> https://<user>.<baseDomain>/ 與 wss://<user>.<baseDomain>/ssh

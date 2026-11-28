@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# 啟用 Prometheus + Grafana 監控 Sidecar（免重建主映像、免讓 Prometheus 讀取使用者密碼 Secret）
+# 前提：已由 charts/robotics-infra 建立共用 ConfigMap `selkies-metrics-exporter`
+# 特色：
+#   1. 自動開啟 Selkies v2.2.1 內建 SELKIES_ENABLE_METRICS_HTTP=true (:8080/api/metrics)
+#   2. 掛載極輕量 Read-Only Sidecar (:9108/metrics，複用同映像、佔 0 GPU、~20m CPU / 32Mi RAM)
+#   3. 本機 loopback 完成 Basic Auth，清洗高基數 webrtc_statistics_info 防 TSDB 爆量
+#   4. 補齊 /dev/shm、PVC、Podman 容器數、SSH/ros-bridge 連線數與核心服務監聽健康度
+patches:
+  - path: patch.yaml

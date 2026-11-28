@@ -1,0 +1,31 @@
+{{- if and .Values.monitoring .Values.monitoring.exporterConfigMap .Values.monitoring.exporterConfigMap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.monitoring.exporterConfigMap.name | default "selkies-metrics-exporter" }}
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring-exporter
+data:
+  robot_metrics_exporter.py: |-
+{{ .Files.Get "files/robot_metrics_exporter.py" | indent 4 }}
+{{- end }}
+{{- if and .Values.monitoring .Values.monitoring.grafanaDashboard .Values.monitoring.grafanaDashboard.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-grafana-dashboard
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring-dashboard
+    {{ .Values.monitoring.grafanaDashboard.sidecarLabel | default "grafana_dashboard" }}: {{ .Values.monitoring.grafanaDashboard.sidecarLabelValue | default "1" | quote }}
+    {{- with .Values.monitoring.grafanaDashboard.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    grafana_folder: {{ .Values.monitoring.grafanaDashboard.folder | default "Robot-Infra v3" | quote }}
+data:
+  robot-infra-v3.json: |-
+{{ .Files.Get "files/grafana-dashboard-robot-infra-v3.json" | indent 4 }}
+{{- end }}

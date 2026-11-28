@@ -48,6 +48,16 @@ spec:
           port: {{ .Values.coturn.minPort }}
           endPort: {{ .Values.coturn.maxPort }}
     {{- end }}
+    {{- if ne .Values.networkPolicy.allowMonitoringScrape false }}
+    # 4. 放行生產既有 Prometheus（monitoring Namespace）抓取 Sidecar :9108/metrics（僅內部 ClusterIP，絕不經 Ingress 對外暴露）
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml (.Values.networkPolicy.monitoringNamespaceSelector | default (dict "kubernetes.io/metadata.name" "monitoring")) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.monitoringMetricsPort | default 9108 }}
+    {{- end }}
   egress:
     # 1. 允許查詢叢集內部 CoreDNS
     - to:

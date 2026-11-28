@@ -131,6 +131,10 @@ spec:
               value: {{ .Values.selkies.enableResize | quote }}
             - name: SELKIES_WEBRTC_PACER
               value: {{ .Values.selkies.webrtcPacer | quote }}
+            {{- if and .Values.monitoring .Values.monitoring.enabled }}
+            - name: SELKIES_ENABLE_METRICS_HTTP
+              value: "true"
+            {{- end }}
             {{- if eq (.Values.ingress.routingMode | default "subdomain") "subfolder" }}
             - name: SELKIES_SUBFOLDER
               value: {{ printf "/%s" .Values.user.name | quote }}
@@ -279,11 +283,94 @@ spec:
               mountPath: /dev/net/tun
             {{- end }}
             {{- end }}
+        {{- if and .Values.monitoring .Values.monitoring.enabled }}
+        - name: metrics-exporter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - python3
+            - /opt/monitoring/robot_metrics_exporter.py
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.monitoring.port | default 9108 }}
+              protocol: TCP
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
+            - name: EXPORTER_MODE
+              value: "selkies"
+            - name: EXPORTER_PORT
+              value: {{ .Values.monitoring.port | default 9108 | quote }}
+            - name: SELKIES_PORT
+              value: {{ .Values.selkies.webPort | quote }}
+            {{- if eq (.Values.ingress.routingMode | default "subdomain") "subfolder" }}
+            - name: SELKIES_SUBFOLDER
+              value: {{ printf "/%s" .Values.user.name | quote }}
+            {{- end }}
+            - name: SELKIES_BASIC_AUTH_USER
+              value: {{ .Values.user.auth.webUsername | default .Values.user.name | quote }}
+            - name: SELKIES_BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $authSecret }}
+                  key: WEB_PASSWORD
+            - name: ENABLE_LOCAL_HOST_METRICS
+              value: "false"
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          volumeMounts:
+            - name: metrics-exporter-script
+              mountPath: /opt/monitoring
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+              readOnly: true
+            {{- if .Values.storage.personalPvc.enabled }}
+            - name: personal-data
+              mountPath: {{ .Values.storage.personalPvc.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.podman.enabled }}
+            - name: podman-storage
+              mountPath: {{ .Values.podman.storage.mountPath }}
+              readOnly: true
+            {{- end }}
+        {{- end }}
       volumes:
         - name: dshm
           emptyDir:
             medium: Memory
             sizeLimit: {{ .Values.shmSizeLimit }}
+        {{- if and .Values.monitoring .Values.monitoring.enabled }}
+        - name: metrics-exporter-script
+          configMap:
+            name: {{ .Values.monitoring.exporterConfigMapName | default "selkies-metrics-exporter" }}
+            defaultMode: 0444
+        {{- end }}
         {{- if $useAirGapRtc }}
         - name: rtc-config
           configMap:

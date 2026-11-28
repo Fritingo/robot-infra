@@ -1,0 +1,207 @@
+{{- if and .Values.monitoring .Values.monitoring.serviceMonitor .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-selkies
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.monitoring.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: selkies
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval | default "15s" }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout | default "10s" }}
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_label_app_kubernetes_io_user]
+          targetLabel: user
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+      metricRelabelings:
+        # 雙重保險：確保任何高基數 webrtc_statistics_info 都不進入生產 Prometheus TSDB
+        - sourceLabels: [__name__]
+          regex: "webrtc_statistics_info"
+          action: drop
+{{- if and .Values.rosZenohHub .Values.rosZenohHub.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-zenoh-hub
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.monitoring.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: zenoh-hub
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval | default "15s" }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout | default "10s" }}
+{{- end }}
+{{- end }}
+{{- if and .Values.monitoring .Values.monitoring.prometheusRule .Values.monitoring.prometheusRule.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "robotics-infra.fullname" . }}-alerts
+  labels:
+    {{- include "robotics-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.monitoring.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: robot-infra-v3.rules
+      interval: 15s
+      rules:
+        - alert: RobotSelkiesExporterDown
+          expr: robot_selkies_up{namespace="{{ .Release.Namespace }}"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Selkies desktop exporter unreachable ({{`{{ $labels.user }}`}})"
+            description: "User {{`{{ $labels.user }}`}} Selkies /api/metrics loopback scrape failed for 1m."
+
+        - alert: RobotCoreServicePortDown
+          expr: robot_service_port_listening{namespace="{{ .Release.Namespace }}",service=~"selkies|sshd|ssh_ws|zenoh_ws"} == 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Core service {{`{{ $labels.service }}`}} down ({{`{{ $labels.user }}`}})"
+            description: "Port {{`{{ $labels.port }}`}} for {{`{{ $labels.service }}`}} is not listening inside {{`{{ $labels.user }}`}} Pod."
+
+        - alert: RobotStreamingLowFPS
+          expr: fps{namespace="{{ .Release.Namespace }}"} > 0 and fps{namespace="{{ .Release.Namespace }}"} < 20
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low Selkies streaming FPS ({{`{{ $labels.user }}`}})"
+            description: "Client FPS for {{`{{ $labels.user }}`}} dropped below 20 FPS."
+
+        - alert: RobotStreamingHighLatency
+          expr: latency{namespace="{{ .Release.Namespace }}"} > 100
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High Selkies streaming RTT latency ({{`{{ $labels.user }}`}})"
+            description: "Observed RTT latency for {{`{{ $labels.user }}`}} exceeded 100 ms."
+
+        - alert: RobotWebRTCDroppedFrames
+          expr: rate(webrtc_bridge_dropped_frames{namespace="{{ .Release.Namespace }}"}[2m]) > 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "WebRTC bridge dropping frames ({{`{{ $labels.user }}`}})"
+            description: "Encoded frames are being dropped before packetization for {{`{{ $labels.user }}`}}."
+
+        - alert: RobotShmUsageHigh
+          expr: robot_shm_usage_ratio{namespace="{{ .Release.Namespace }}"} > 0.85
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "/dev/shm usage above 85% ({{`{{ $labels.user }}`}})"
+            description: "Shared memory /dev/shm usage exceeded 85% (risk for Isaac Sim / ROS 2 SHM)."
+
+        - alert: RobotContainerMemoryHigh
+          expr: |
+            (
+              container_memory_working_set_bytes{namespace="{{ .Release.Namespace }}",container="selkies-desktop"}
+              / on(namespace,pod,container) group_left
+              kube_pod_container_resource_limits{namespace="{{ .Release.Namespace }}",container="selkies-desktop",resource="memory"}
+            ) > 0.85
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container memory working set > 85% ({{`{{ $labels.pod }}`}})"
+            description: "Pod {{`{{ $labels.pod }}`}} is approaching its memory limit and risks OOMKill."
+
+        - alert: RobotCpuThrottlingHigh
+          expr: |
+            (
+              rate(container_cpu_cfs_throttled_periods_total{namespace="{{ .Release.Namespace }}",container="selkies-desktop"}[2m])
+              /
+              clamp_min(rate(container_cpu_cfs_periods_total{namespace="{{ .Release.Namespace }}",container="selkies-desktop"}[2m]), 1)
+            ) > 0.25
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU CFS throttling ({{`{{ $labels.pod }}`}})"
+            description: "CPU throttling > 25% on {{`{{ $labels.pod }}`}} (check parallel colcon builds impacting FPS)."
+
+        - alert: RobotPvcSpaceLow
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes{namespace="{{ .Release.Namespace }}"}
+              /
+              clamp_min(kubelet_volume_stats_capacity_bytes{namespace="{{ .Release.Namespace }}"}, 1)
+            ) > 0.85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PVC usage above 85% ({{`{{ $labels.persistentvolumeclaim }}`}})"
+            description: "PVC {{`{{ $labels.persistentvolumeclaim }}`}} in {{ .Release.Namespace }} exceeded 85%."
+
+        - alert: RobotPro6000GpuVramHigh
+          expr: |
+            (
+              DCGM_FI_DEV_FB_USED{exported_namespace="{{ .Release.Namespace }}"}
+              /
+              clamp_min(DCGM_FI_DEV_FB_USED{exported_namespace="{{ .Release.Namespace }}"} + DCGM_FI_DEV_FB_FREE{exported_namespace="{{ .Release.Namespace }}"}, 1)
+            ) > 0.90
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "RTX PRO 6000 MIG VRAM > 90% ({{`{{ $labels.exported_pod }}`}})"
+            description: "MIG slice {{`{{ $labels.GPU_I_PROFILE }}`}} VRAM utilization exceeded 90%."
+
+        - alert: RobotPro6000NvencOverloaded
+          expr: DCGM_FI_DEV_ENC_UTIL{exported_namespace="{{ .Release.Namespace }}"} > 80
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "RTX PRO 6000 NVENC utilization > 80% ({{`{{ $labels.Hostname }}`}})"
+            description: "NVENC hardware encoder load exceeded 80% on PRO 6000 node {{`{{ $labels.Hostname }}`}}."
+
+        - alert: RobotPro6000GpuXidError
+          expr: increase(DCGM_FI_DEV_XID_ERRORS{exported_namespace="{{ .Release.Namespace }}"}[5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "NVIDIA GPU XID error on PRO 6000 robotics workload"
+            description: "DCGM detected GPU XID error on {{`{{ $labels.Hostname }}`}} ({{`{{ $labels.exported_pod }}`}})."
+{{- end }}
